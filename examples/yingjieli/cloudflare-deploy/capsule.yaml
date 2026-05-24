@@ -1,0 +1,114 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-cloudflare-deploy
+version: 1.0.0
+type: adapter
+domain: yingjieli.deploy
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    Cloudflare Pages deployment adapter for yingjieliartist.com. Owns the
+    project name, the KV namespace binding (YL_DATA), the R2 bucket
+    binding (YL_IMAGES), the CDN cache + security headers, and legacy
+    URL redirects.
+  owns:
+    - site/wrangler.toml (project name, compat date, KV + R2 bindings)
+    - site/_headers (CDN cache rules, security headers)
+    - site/_redirects (legacy URL fixes)
+    - the deploy commands (Wrangler CLI or Cloudflare Dashboard upload)
+    - the public custom domain mapping (yingjieliartist.com, www.)
+  does_not_own:
+    - any application code (functions and assets belong to their own capsules)
+    - the ADMIN_PASSWORD / SESSION_SECRET values (configured in Cloudflare dashboard, not in repo)
+
+interfaces:
+  provides:
+    - kind: env
+      name: YL_DATA
+      description: KV namespace binding, id bbed5ce0f0954546bf5c58bd5b8f1f80.
+    - kind: env
+      name: YL_IMAGES
+      description: R2 bucket binding, bucket_name=yl-images.
+    - kind: cli
+      name: wrangler-deploy
+      entrypoint: site/wrangler.toml
+      description: |
+        wrangler pages deploy . --project-name yingjieliartist
+        (run from inside site/)
+
+  requires:
+    - kind: env
+      name: ADMIN_PASSWORD
+      description: |
+        Set via Cloudflare Pages → Settings → Environment Variables.
+        Required by yingjieli-admin-auth; the deploy adapter only
+        documents that it must be set.
+    - kind: env
+      name: SESSION_SECRET
+      description: HMAC key (>= 32 bytes). Set in the same place as ADMIN_PASSWORD.
+
+dependencies:
+  capsules: []
+  runtime:
+    - wrangler: ">=3"
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    This capsule is the bridge between the code in this repo and the
+    Cloudflare Pages runtime. It does not contain logic — it contains
+    bindings. The two bindings (YL_DATA, YL_IMAGES) are what make the
+    other capsules' env requirements satisfied at runtime. If the
+    bindings change, every dependent capsule's `requires.env` section
+    must change with them.
+
+  extension_points:
+    - id: cache-headers
+      where: site/_headers
+      contract: |
+        Long-cache /assets/* and /images/*; no-cache HTML. Add new path
+        patterns above the catch-all.
+    - id: kv-binding
+      where: site/wrangler.toml
+      contract: |
+        The `binding = "YL_DATA"` name is the contract — any rename
+        breaks every capsule that imports env.YL_DATA.
+
+  avoid:
+    - Committing ADMIN_PASSWORD or SESSION_SECRET to wrangler.toml.
+    - Renaming bindings without coordinating with dependent capsules.
+    - Skipping HTTPS (Cloudflare Pages forces it; do not override).
+
+  glossary:
+    binding: a name made available in the Functions runtime as env.<binding>
+    KV: Cloudflare key-value store; backs the content blob and rate-limit counters
+    R2: Cloudflare object store; backs uploaded images
+
+verification:
+  health_checks:
+    - id: wrangler-toml-present
+      command: node -e "require('fs').statSync('site/wrangler.toml')"
+      cwd: ../..
+    - id: headers-present
+      command: node -e "require('fs').statSync('site/_headers')"
+      cwd: ../..
+    - id: redirects-present
+      command: node -e "require('fs').statSync('site/_redirects')"
+      cwd: ../..
+
+  functional_tests:
+    - id: bindings-declared
+      cwd: ../..
+      command: node -e "const s=require('fs').readFileSync('site/wrangler.toml','utf8');for(const b of ['YL_DATA','YL_IMAGES']){if(!s.includes(b)){console.error('missing binding',b);process.exit(1)}}console.log('ok')"
+      proves:
+        - wrangler.toml declares both YL_DATA and YL_IMAGES bindings.
+
+  invariants:
+    - Secrets are never committed to wrangler.toml.
+    - The binding names YL_DATA and YL_IMAGES are stable; renaming requires a coordinated capsule version bump.
+    - /assets/* and /images/* responses are immutable cache; HTML is no-cache.

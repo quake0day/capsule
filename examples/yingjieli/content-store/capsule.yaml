@@ -1,0 +1,126 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-content-store
+version: 1.0.0
+type: subsystem
+domain: yingjieli.site
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    Single source of truth for all editable site content of yingjieliartist.com:
+    hero, bio, exhibitions, contact, and the works catalog. Backed by Cloudflare
+    KV (binding YL_DATA) with an in-code DEFAULT_DATA fallback for first boot.
+  owns:
+    - the schema of the site-content blob (hero, bio, exhibitions, contact, works[])
+    - GET /api/data (public read, 30s edge cache + stale-while-revalidate)
+    - PUT /api/data (admin-only full replace)
+    - POST /api/data?seed=1 (admin-only reset to DEFAULT_DATA)
+    - DEFAULT_DATA seed (used if KV is empty)
+    - the next-work-number helper (zero-padded 3-digit num)
+  does_not_own:
+    - storage of image bytes (see yingjieli-image-store; this capsule only keeps the file *reference*)
+    - who is allowed to write (see yingjieli-admin-auth; this capsule calls isAuthed())
+    - HTML rendering (see yingjieli-public-site / yingjieli-admin-ui)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: data-read
+      entrypoint: site/functions/api/data.js
+      description: GET /api/data → full content JSON. Public.
+    - kind: http_api
+      name: data-write
+      entrypoint: site/functions/api/data.js
+      description: PUT /api/data → replace full content blob. Admin only.
+    - kind: library
+      name: data-helpers
+      entrypoint: site/functions/_lib/data.js
+      description: readData(env), writeData(env, data), nextWorkNum(works), DEFAULT_DATA.
+
+  requires:
+    - kind: library
+      name: auth-helpers
+      from_capsule: yingjieli-admin-auth
+      description: isAuthed(request, env) is called for PUT and seed.
+    - kind: env
+      name: YL_DATA
+      description: Cloudflare KV namespace binding. Provided by yingjieli-cloudflare-deploy.
+
+dependencies:
+  capsules:
+    - name: yingjieli-admin-auth
+      version: ">=1.0.0 <2.0.0"
+  runtime:
+    - node: ">=18"
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    This is the content store. Everything visible on the public site that an
+    admin can edit lives in one JSON blob at KV key `site:data:v1`. The blob
+    has a fixed top-level shape — hero, bio, exhibitions, contact, works —
+    and PUT validates that shape exists before writing. Do NOT introduce
+    additional KV keys for site content; everything goes in this one blob so
+    edits are atomic.
+
+  extension_points:
+    - id: default-data
+      where: site/functions/_lib/data.js:DEFAULT_DATA
+      contract: |
+        The shape that ships when KV is empty. Adding a new field here is
+        also a contract change for the admin UI and the public site —
+        update both consumers in the same change.
+    - id: write-validator
+      where: site/functions/api/data.js:onRequest (PUT branch)
+      contract: |
+        Currently checks presence + array-ness for `works` and `exhibitions`.
+        Strengthen here (do NOT push validation into the admin UI).
+
+  avoid:
+    - Sharding the content blob across multiple KV keys (breaks atomic edits).
+    - Reading or writing KV from anywhere outside this capsule's helpers.
+    - Storing raw image bytes in this blob; only filename references.
+
+  glossary:
+    works: ordered list of artwork records (num, file, title, year, w, h, gallery?)
+    hero: the featured artwork pointer shown on the homepage
+    seed: admin-triggered reset of the KV blob back to DEFAULT_DATA
+
+verification:
+  health_checks:
+    - id: data-lib-syntax-valid
+      command: node --check site/functions/_lib/data.js
+      cwd: ../..
+      timeout_seconds: 15
+    - id: data-api-syntax-valid
+      command: node --check site/functions/api/data.js
+      cwd: ../..
+
+  functional_tests:
+    - id: default-data-shape
+      cwd: ../..
+      command: |
+        node -e "import('./site/functions/_lib/data.js').then(m=>{const d=m.DEFAULT_DATA;for(const k of ['hero','bio','exhibitions','contact','works']){if(!(k in d)){console.error('missing',k);process.exit(1)}}console.log('ok',d.works.length,'works')})"
+      proves:
+        - DEFAULT_DATA has all five required top-level keys.
+        - The default works array is non-empty.
+
+  integration_tests: []
+
+  invariants:
+    - The content blob always has exactly these top-level keys; PUT rejects anything missing.
+    - Two PUTs are linearised by KV; partial writes never appear.
+    - DEFAULT_DATA is what an empty KV returns — there is no other fallback path.
+    - Image filenames in `works[].file` reference keys served by yingjieli-image-store or static /images/.
+
+compatibility:
+  tested_with:
+    - capsule: yingjieli-admin-auth
+      versions: ">=1.0.0 <2.0.0"
+    - capsule: yingjieli-cloudflare-deploy
+      versions: ">=1.0.0"

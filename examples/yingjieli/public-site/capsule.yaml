@@ -1,0 +1,111 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-public-site
+version: 1.0.0
+type: subsystem
+domain: yingjieli.site
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    The public, read-only frontend of yingjieliartist.com. Renders the
+    hero, biography, masonry gallery of works, exhibitions, and contact
+    sections, plus a keyboard / touch-friendly lightbox. Pulls all
+    content at runtime from /api/data and all images from /api/img/<key>
+    (with /images/* as the legacy static fallback).
+  owns:
+    - site/index.html (markup, SEO meta, OpenGraph)
+    - "site/assets/styles.css (design system: Fraunces + Inter Tight, paper palette)"
+    - site/assets/app.js (masonry layout + lightbox + nav scroll)
+    - the visual contract of the site (typography, palette, motion)
+  does_not_own:
+    - content data (consumes GET /api/data; never mutates it)
+    - image bytes (consumes /api/img/<key>; never uploads)
+    - authentication (never reads or sets the yl_admin cookie)
+    - admin UI (separate capsule)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: site-root
+      entrypoint: site/index.html
+      description: The site at https://yingjieliartist.com/.
+
+  requires:
+    - kind: http_api
+      name: data-read
+      from_capsule: yingjieli-content-store
+      description: GET /api/data — site content blob.
+    - kind: http_api
+      name: image-serve
+      from_capsule: yingjieli-image-store
+      description: GET /api/img/<key> — artwork images.
+
+dependencies:
+  capsules:
+    - name: yingjieli-content-store
+      version: ">=1.0.0 <2.0.0"
+    - name: yingjieli-image-store
+      version: ">=1.0.0 <2.0.0"
+  runtime:
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    This is the public site. It is read-only at runtime — there is no
+    "save" flow here. All content is fetched from /api/data on load; the
+    page is built from that JSON, not from data embedded in HTML. If
+    you add a new section, you also need a new field in the content-store
+    capsule's DEFAULT_DATA and a new card in the admin UI.
+
+  extension_points:
+    - id: render-gallery
+      where: site/assets/app.js
+      contract: |
+        Builds the masonry gallery from works[]. Respects works[].gallery
+        flag for which items appear in the home grid vs detail-only.
+
+  avoid:
+    - Hard-coding content (artwork lists, bios) in HTML.
+    - Importing jQuery or any heavy framework — the site is 0-dep JS by design.
+    - Adding network requests behind any user gesture (everything is one fetch on load).
+
+  glossary:
+    masonry: variable-height grid layout that preserves each work's aspect ratio
+    lightbox: full-screen image viewer with keyboard / swipe nav
+    hero: the large featured-work block at the top of the home page
+
+verification:
+  health_checks:
+    - id: index-html-present
+      command: node -e "require('fs').statSync('site/index.html')"
+      cwd: ../..
+    - id: app-js-present
+      command: node -e "require('fs').statSync('site/assets/app.js')"
+      cwd: ../..
+    - id: styles-css-present
+      command: node -e "require('fs').statSync('site/assets/styles.css')"
+      cwd: ../..
+
+  functional_tests:
+    - id: html-references-data-api
+      cwd: ../..
+      command: node -e "const s=require('fs').readFileSync('site/assets/app.js','utf8');if(!s.includes('/api/data')){console.error('app.js does not fetch /api/data');process.exit(1)}console.log('ok')"
+      proves:
+        - The frontend really does fetch /api/data (not bundled content).
+
+  invariants:
+    - The public site never mutates content (no PUT/POST/DELETE in app.js).
+    - The public site never reads the yl_admin cookie.
+    - The site degrades to "no content" gracefully if /api/data fails.
+
+compatibility:
+  tested_with:
+    - capsule: yingjieli-content-store
+      versions: ">=1.0.0"
+    - capsule: yingjieli-image-store
+      versions: ">=1.0.0"

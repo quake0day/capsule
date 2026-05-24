@@ -1,0 +1,130 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-admin-auth
+version: 1.0.0
+type: subsystem
+domain: yingjieli.site
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    Single source of truth for "is this request the site admin?". Implements a
+    password login that yields an HMAC-signed session cookie (7-day TTL),
+    plus per-IP brute-force rate limiting via Cloudflare KV.
+  owns:
+    - POST /api/auth (login), DELETE /api/auth (logout), GET /api/auth (status)
+    - the yl_admin HttpOnly cookie format and TTL
+    - HMAC session token construction and verification
+    - per-IP rate limit (5 attempts / 5 min) backed by KV
+    - the isAuthed(request, env) helper that every other capsule must use
+  does_not_own:
+    - the admin's *identity* beyond "knows the shared password" (single-user system)
+    - what an authed admin is allowed to do (other capsules enforce their own write gates)
+    - user-facing login UI (lives in yingjieli-admin-ui)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: auth-login
+      entrypoint: site/functions/api/auth.js
+      description: POST /api/auth — exchange password for session cookie.
+    - kind: http_api
+      name: auth-logout
+      entrypoint: site/functions/api/auth.js
+      description: DELETE /api/auth — clear session cookie.
+    - kind: http_api
+      name: auth-status
+      entrypoint: site/functions/api/auth.js
+      description: "GET /api/auth → { authenticated: bool }."
+    - kind: library
+      name: auth-helpers
+      entrypoint: site/functions/_lib/auth.js
+      description: |
+        isAuthed, createSession, verifySession, setSessionCookie,
+        clearSessionCookie, json, unauthorized, checkPasswordRateLimit.
+
+  requires:
+    - kind: env
+      name: ADMIN_PASSWORD
+      description: Shared admin password. REQUIRED; POST /api/auth 500s without it.
+    - kind: env
+      name: SESSION_SECRET
+      description: HMAC signing key for session tokens. Falls back to ADMIN_PASSWORD if unset (NOT recommended).
+    - kind: env
+      name: YL_DATA
+      description: KV namespace; used for per-IP rate-limit counters (rl:auth:<ip>).
+
+dependencies:
+  capsules: []
+  runtime:
+    - node: ">=18"
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    This capsule is the only thing that says "request is admin". Other
+    capsules MUST import isAuthed() from site/functions/_lib/auth.js — they
+    must never decode the cookie themselves and must never re-implement
+    HMAC verification. The session format is `admin.<exp>.<sig_b64url>`;
+    if you change it, also bump the cookie name (yl_admin) so old cookies
+    invalidate cleanly.
+
+  extension_points:
+    - id: rate-limit-policy
+      where: site/functions/_lib/auth.js:checkPasswordRateLimit
+      contract: |
+        Pure (env, ip) -> { ok, retryAfter? }. Safe to tighten the
+        threshold (currently 5 / 5min). Do not move state out of KV.
+
+  avoid:
+    - Decoding the yl_admin cookie outside this capsule.
+    - Storing the password or hash anywhere in code or KV (env var only).
+    - Removing the Secure / HttpOnly / SameSite=Strict cookie flags.
+    - Skipping the constant-time compare branch in /api/auth POST.
+
+  glossary:
+    session: HMAC-signed token in the yl_admin cookie, scope `admin`, 7-day TTL
+    rate-limit: per-IP attempt counter at KV key `rl:auth:<ip>`
+    isAuthed: the single function every other capsule calls to gate writes
+
+verification:
+  health_checks:
+    - id: lib-auth-syntax
+      command: node --check site/functions/_lib/auth.js
+      cwd: ../..
+    - id: api-auth-syntax
+      command: node --check site/functions/api/auth.js
+      cwd: ../..
+
+  functional_tests:
+    - id: roundtrip-session-token
+      cwd: ../..
+      command: |
+        node --input-type=module -e "import('./site/functions/_lib/auth.js').then(async m=>{const env={SESSION_SECRET:'test-secret'};const t=await m.createSession(env);const ok=await m.verifySession(t,env);if(!ok){console.error('verify failed');process.exit(1)}console.log('roundtrip ok')})"
+      proves:
+        - createSession() output verifies cleanly via verifySession() under the same secret.
+    - id: tampered-token-rejected
+      cwd: ../..
+      command: |
+        node --input-type=module -e "import('./site/functions/_lib/auth.js').then(async m=>{const env={SESSION_SECRET:'test-secret'};let t=await m.createSession(env);t=t.slice(0,-3)+'AAA';const ok=await m.verifySession(t,env);if(ok){console.error('tampered token accepted');process.exit(1)}console.log('tamper rejected')})"
+      proves:
+        - A token whose signature has been altered does not verify.
+
+  integration_tests: []
+
+  invariants:
+    - A revoked / expired session must never authenticate a subsequent request.
+    - ADMIN_PASSWORD must never appear in any response body or log line.
+    - Cookie is always Secure + HttpOnly + SameSite=Strict.
+    - Rate-limit window cannot be bypassed by removing the rl:auth:<ip> key from the client side.
+
+compatibility:
+  tested_with:
+    - capsule: yingjieli-content-store
+      versions: ">=1.0.0 <2.0.0"
+    - capsule: yingjieli-image-store
+      versions: ">=1.0.0 <2.0.0"

@@ -91,11 +91,28 @@ def init(
 
 @app.command()
 def validate(
-    paths: list[Path] = typer.Argument(..., help="Capsule directories or capsule.yaml files."),
+    paths: list[Path] = typer.Argument(..., help="Capsule directories, capsule.yaml files, or a parent dir."),
 ) -> None:
-    """Validate one or more capsule.yaml files against the spec."""
+    """Validate capsule.yaml files against the spec. Auto-discovers under parent dirs."""
     any_failed = False
+    targets: list[Path] = []
     for p in paths:
+        resolved = p.expanduser().resolve()
+        if resolved.is_dir() and not (resolved / "capsule.yaml").exists() and not (resolved / "capsule.yml").exists():
+            found = list(resolved.rglob("capsule.yaml"))
+            kept = [
+                f for f in sorted(found)
+                if not any(part.startswith(".") for part in f.relative_to(resolved).parts[:-1])
+            ]
+            if not kept:
+                err_console.print(f"[red]✗[/red] no capsule.yaml found under {resolved}")
+                any_failed = True
+                continue
+            targets.extend(kept)
+        else:
+            targets.append(resolved)
+
+    for p in targets:
         try:
             lc = load(p)
         except CapsuleLoadError as exc:
@@ -224,17 +241,28 @@ def compose_command(
 def graph(
     paths: list[Path] = typer.Argument(..., metavar="PATHS"),
     fmt: str = typer.Option("text", "--format", "-f", help="text | dot"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Write to file instead of stdout."
+    ),
 ) -> None:
     """Render the capsule dependency graph."""
     capsules = _resolve_capsules(paths)
     comp = compose_capsules(capsules)
     if fmt == "text":
-        print(render_text(comp))
+        rendered = render_text(comp)
     elif fmt == "dot":
-        print(render_dot(comp))
+        rendered = render_dot(comp)
     else:
         err_console.print(f"[red]unknown format '{fmt}'. Use 'text' or 'dot'.[/red]")
         raise typer.Exit(code=2)
+
+    if output:
+        output.write_text(rendered + "\n", encoding="utf-8")
+        console.print(
+            f"[green]wrote[/green] {output} ({len(rendered)} chars, format={fmt})"
+        )
+    else:
+        print(rendered)
 
 
 # ---------------------------------------------------------------------------

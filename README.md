@@ -112,13 +112,21 @@ pip install -e .
 
 You now have a `capsule` command on your PATH (inside the venv).
 
+## Examples
+
+Two reference example sets ship in the repo:
+
+- [`examples/wolfctf/`](examples/wolfctf/) — synthetic three-capsule
+  scenario (`auth-core`, `lab-runtime-docker`, `ai-report`) used as the
+  quickstart below.
+- [`examples/yingjieli/`](examples/yingjieli/) — real-world case study
+  decomposing the deployed site [yingjieliartist.com](https://yingjieliartist.com)
+  into six capsules (admin-auth, content-store, image-store, public-site,
+  admin-ui, cloudflare-deploy). All six validate, compose, graph, and
+  bundle out of the box; `verify` requires the yingjieli source repo
+  cloned alongside — see the example's README.
+
 ## Quickstart: the WolfCTF example
-
-The repo ships three reference capsules under `examples/wolfctf/`:
-
-- `auth-core` — issues and validates student session tokens
-- `lab-runtime-docker` — runs per-student lab containers
-- `ai-report` — turns lab traces into instructor reports
 
 `ai-report` depends on the other two; `lab-runtime-docker` depends on
 `auth-core`. The composer resolves the diamond and the bundler renders the

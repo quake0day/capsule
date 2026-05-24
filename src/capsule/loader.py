@@ -45,10 +45,11 @@ def find_capsule_file(start: Path) -> Path:
 def load(path: str | Path) -> LoadedCapsule:
     """Load and validate a single capsule.yaml."""
     file_path = find_capsule_file(Path(path))
+    text = file_path.read_text(encoding="utf-8")
     try:
-        raw = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        raise CapsuleLoadError(f"{file_path}: YAML parse error: {exc}") from exc
+        raise CapsuleLoadError(_format_yaml_error(file_path, text, exc)) from exc
     if not isinstance(raw, dict):
         raise CapsuleLoadError(f"{file_path}: top-level document must be a mapping")
     try:
@@ -76,3 +77,40 @@ def _format_validation_error(path: Path, exc: ValidationError) -> str:
         loc = ".".join(str(p) for p in err["loc"]) or "<root>"
         lines.append(f"  - {loc}: {err['msg']}")
     return "\n".join(lines)
+
+
+def _format_yaml_error(path: Path, text: str, exc: yaml.YAMLError) -> str:
+    """Surface a friendlier hint for the common `: ` (colon-space) trap.
+
+    PyYAML raises 'mapping values are not allowed here' when a list item or
+    scalar value contains a colon followed by a space — a recurring papercut
+    for hand-written capsule.yaml files.
+    """
+    base = f"{path}: YAML parse error: {exc}"
+    msg = str(exc)
+    if "mapping values are not allowed" not in msg:
+        return base
+
+    # Try to recover the offending line from the exception's mark, then from
+    # the line cited in the message.
+    line_no = getattr(getattr(exc, "problem_mark", None), "line", None)
+    offending: str | None = None
+    if line_no is not None:
+        try:
+            offending = text.splitlines()[line_no]
+        except IndexError:
+            offending = None
+
+    hint_lines = [
+        base,
+        "",
+        "  hint: this usually means a list item or value contains `: ` (colon",
+        "        followed by a space) but is not quoted. Wrap the value in",
+        "        double quotes so YAML treats it as a single scalar:",
+        "",
+        '          - "GET /api/auth → { authenticated: bool }."',
+        '          description: "the R2 key format: <slug>_<ts>.jpg"',
+    ]
+    if offending and ": " in offending:
+        hint_lines.insert(2, f"  offending line: {offending.strip()}")
+    return "\n".join(hint_lines)

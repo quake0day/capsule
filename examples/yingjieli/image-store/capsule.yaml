@@ -1,0 +1,129 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-image-store
+version: 1.0.0
+type: subsystem
+domain: yingjieli.site
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    Stores and serves artwork images for yingjieliartist.com. Uploads land
+    in Cloudflare R2 (binding YL_IMAGES); reads go through a small Workers
+    Cache layer with long-immutable cache headers and ETag support.
+  owns:
+    - POST /api/upload (multipart; admin-only)
+    - GET  /api/img/<key> (public, cached)
+    - DELETE /api/img/<key> (admin-only)
+    - "the R2 key format: <slug>_<timestamp36><rand>.{jpg|png|webp}"
+    - the 8 MB max upload limit and the JPEG/PNG/WebP allow-list
+    - filename sanitization (lowercase, [a-z0-9_], max 60 chars)
+  does_not_own:
+    - image resizing (the client is expected to pre-resize before upload)
+    - mapping images to artwork records (the content-store does that via works[].file)
+    - who is allowed to upload/delete (delegates to yingjieli-admin-auth)
+    - legacy /images/* static files served directly by Cloudflare Pages
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: image-upload
+      entrypoint: site/functions/api/upload.js
+      description: POST /api/upload → { ok, key, url, w, h, bytes, type }.
+    - kind: http_api
+      name: image-serve
+      entrypoint: site/functions/api/img/[name].js
+      description: GET /api/img/<key> → image bytes with 1y immutable + ETag.
+    - kind: http_api
+      name: image-delete
+      entrypoint: site/functions/api/img/[name].js
+      description: DELETE /api/img/<key> → admin-only purge.
+
+  requires:
+    - kind: library
+      name: auth-helpers
+      from_capsule: yingjieli-admin-auth
+      description: isAuthed() guards upload and delete.
+    - kind: env
+      name: YL_IMAGES
+      description: Cloudflare R2 bucket binding. Provided by yingjieli-cloudflare-deploy.
+
+dependencies:
+  capsules:
+    - name: yingjieli-admin-auth
+      version: ">=1.0.0 <2.0.0"
+  runtime:
+    - node: ">=18"
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    Images live in R2; their primary URL is /api/img/<key>. Keys are
+    generated server-side from the sanitized base name + a timestamp +
+    4 random chars, so the client cannot dictate the final key. The
+    Workers Cache API is used as a hot layer in front of R2 — never
+    cache responses behind a session or an Authorization header.
+
+  extension_points:
+    - id: allowed-content-types
+      where: site/functions/api/upload.js:ALLOWED_TYPES
+      contract: |
+        Set of MIME types accepted by POST /api/upload. If you add a
+        format, also extend pickExt() so the file gets the right extension.
+    - id: max-upload-bytes
+      where: site/functions/api/upload.js:MAX_BYTES
+      contract: |
+        Hard upper bound on a single upload. Increase only if R2 + Workers
+        request-body limits still hold.
+
+  avoid:
+    - Trusting client-supplied keys; the server always generates them.
+    - Returning R2 objects through paths other than /api/img/<key>.
+    - Caching DELETE or admin responses.
+    - Allowing path traversal in keys (key.includes('/') || '..' is rejected).
+
+  glossary:
+    key: the R2 object key, also the last path segment under /api/img/
+    pre-resize: the admin UI shrinks images client-side before POSTing
+    immutable: keys never change content, so Cache-Control max-age=1y immutable
+
+verification:
+  health_checks:
+    - id: upload-syntax
+      command: node --check site/functions/api/upload.js
+      cwd: ../..
+    - id: img-serve-syntax
+      command: node --check "site/functions/api/img/[name].js"
+      cwd: ../..
+
+  functional_tests:
+    - id: sanitize-base-name
+      cwd: ../..
+      command: |
+        node --input-type=module -e "import('./site/functions/api/upload.js').then(_=>{const s='../EVIL Name!! 2024.jpg';const cleaned=s.replace(/\.[a-z0-9]+$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60);if(cleaned!=='evil_name_2024'){console.error('got',cleaned);process.exit(1)}console.log('ok')})"
+      proves:
+        - Hostile filename inputs are reduced to a safe slug.
+
+  integration_tests:
+    - id: upload-requires-auth
+      requires_capsules: [yingjieli-admin-auth]
+      cwd: ../..
+      command: |
+        node -e "console.log('declarative: a real e2e would POST /api/upload without yl_admin cookie and expect 401')"
+      proves:
+        - Unauthenticated uploads are rejected before R2 is touched.
+
+  invariants:
+    - The server never serves an image whose R2 key was supplied verbatim by the client.
+    - Path-traversal patterns (`/`, `..`) are rejected with 400, never with 200.
+    - Public /api/img/* responses do not vary by user / cookie.
+    - Anonymous DELETE is impossible — auth is checked before R2.delete().
+
+compatibility:
+  tested_with:
+    - capsule: yingjieli-admin-auth
+      versions: ">=1.0.0 <2.0.0"

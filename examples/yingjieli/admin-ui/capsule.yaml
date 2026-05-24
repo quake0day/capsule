@@ -1,0 +1,130 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: yingjieli-admin-ui
+version: 1.0.0
+type: subsystem
+domain: yingjieli.site
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    Password-protected single-page admin panel for editing all site
+    content: hero, bio, exhibitions, contact, and the works catalogue
+    (with client-side image resize before upload).
+  owns:
+    - site/admin/index.html (admin SPA shell)
+    - site/admin/admin.js (login flow, editors, client-side image resize, save)
+    - site/admin/admin.css (admin-only styling)
+    - the editing UX (what fields are exposed, save semantics, undo)
+  does_not_own:
+    - session validation (calls /api/auth and lets the server decide)
+    - content schema (consumes the shape returned by /api/data)
+    - image upload mechanics (POSTs to /api/upload; doesn't talk to R2)
+    - the public site's look (separate capsule, separate stylesheet)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: admin-root
+      entrypoint: site/admin/index.html
+      description: The admin panel at https://yingjieliartist.com/admin/.
+
+  requires:
+    - kind: http_api
+      name: auth-login
+      from_capsule: yingjieli-admin-auth
+    - kind: http_api
+      name: auth-status
+      from_capsule: yingjieli-admin-auth
+    - kind: http_api
+      name: auth-logout
+      from_capsule: yingjieli-admin-auth
+    - kind: http_api
+      name: data-read
+      from_capsule: yingjieli-content-store
+    - kind: http_api
+      name: data-write
+      from_capsule: yingjieli-content-store
+    - kind: http_api
+      name: image-upload
+      from_capsule: yingjieli-image-store
+    - kind: http_api
+      name: image-delete
+      from_capsule: yingjieli-image-store
+
+dependencies:
+  capsules:
+    - name: yingjieli-admin-auth
+      version: ">=1.0.0 <2.0.0"
+    - name: yingjieli-content-store
+      version: ">=1.0.0 <2.0.0"
+    - name: yingjieli-image-store
+      version: ">=1.0.0 <2.0.0"
+  runtime:
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    The admin panel is a single page protected by a password login. On
+    load it calls GET /api/auth — if not authenticated it shows the login
+    box, otherwise the editor. Every save is a full PUT /api/data with
+    the entire content blob (the API does not support partial updates).
+    Images are resized client-side BEFORE upload to keep R2 small.
+
+  extension_points:
+    - id: client-image-resize
+      where: site/admin/admin.js
+      contract: |
+        Reduce the image to a sane max dimension on the client before
+        calling POST /api/upload. The server does NOT resize.
+    - id: editor-fields
+      where: site/admin/admin.js
+      contract: |
+        Field set must mirror the content-store schema 1:1. Adding a
+        field requires a coordinated change to DEFAULT_DATA and the
+        write validator in the content-store capsule.
+
+  avoid:
+    - Sending partial updates (the API only accepts full-blob PUT).
+    - Decoding the yl_admin cookie or reading SESSION_SECRET in the browser.
+    - Letting the user pick the final image filename — the server generates it.
+    - Embedding the admin entrypoint anywhere reachable by the public site.
+
+  glossary:
+    full-blob PUT: the only supported save mechanism; entire data object replaces KV
+    client-side resize: shrink-before-upload step in admin.js; server expects pre-sized bytes
+    seed: admin-only POST /api/data?seed=1 that resets the blob to DEFAULT_DATA
+
+verification:
+  health_checks:
+    - id: admin-html-present
+      command: node -e "require('fs').statSync('site/admin/index.html')"
+      cwd: ../..
+    - id: admin-js-present
+      command: node -e "require('fs').statSync('site/admin/admin.js')"
+      cwd: ../..
+
+  functional_tests:
+    - id: admin-talks-to-auth-and-data
+      cwd: ../..
+      command: node -e "const s=require('fs').readFileSync('site/admin/admin.js','utf8');for(const ep of ['/api/auth','/api/data','/api/upload']){if(!s.includes(ep)){console.error('admin.js missing endpoint',ep);process.exit(1)}}console.log('ok')"
+      proves:
+        - admin.js really does talk to all three required backend capsules.
+
+  invariants:
+    - The admin UI never bundles ADMIN_PASSWORD or SESSION_SECRET into client code.
+    - The admin UI calls /api/auth GET before showing the editor.
+    - Saving from the admin UI always replaces the full content blob, never partial.
+
+compatibility:
+  tested_with:
+    - capsule: yingjieli-admin-auth
+      versions: ">=1.0.0"
+    - capsule: yingjieli-content-store
+      versions: ">=1.0.0"
+    - capsule: yingjieli-image-store
+      versions: ">=1.0.0"
