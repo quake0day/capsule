@@ -68,8 +68,15 @@ def resolve(addr: Address) -> Resolved:
     """Ask the registry server to translate an address into a git source."""
     v = f"@{addr.version}" if addr.version else ""
     url = f"{registry_base()}/api/v1/resolve/{addr.owner}/{addr.name}{v}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "capsule-cli/0.2 (+https://github.com/quake0day/capsule)",
+            "Accept": "application/json",
+        },
+    )
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
