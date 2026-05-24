@@ -1,0 +1,99 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: auth-core
+version: 0.3.0
+type: subsystem
+domain: education.ctf
+
+maintainers:
+  - name: WolfCTF Platform Team
+
+purpose:
+  summary: |
+    Issues and validates student session tokens for the WolfCTF platform.
+    Provides an HTTP introspection endpoint that downstream capsules use
+    to authorize requests, and emits a standard `student_id` claim that
+    other capsules can trust.
+  owns:
+    - student credential storage (hashed)
+    - session token issuance and revocation
+    - HTTP introspection endpoint (POST /introspect)
+    - per-student role assignment (student / instructor / admin)
+  does_not_own:
+    - what a student is allowed to *do* with a lab (that's lab-runtime's call)
+    - rate limiting (handled by the edge proxy capsule)
+    - SSO / external IdP integration (separate adapter capsule)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: auth-introspect
+      spec: openapi/auth-introspect.yaml
+      description: POST /introspect — given a bearer token, returns the verified claims.
+    - kind: event
+      name: student.session.revoked
+      payload_schema: schemas/session-revoked.json
+
+  requires:
+    - kind: env
+      name: AUTH_DB_URL
+      description: PostgreSQL connection string for the students DB.
+    - kind: env
+      name: AUTH_SIGNING_KEY
+      description: HMAC key used to sign session tokens; must be >= 32 bytes.
+
+dependencies:
+  capsules: []
+  runtime:
+    - python: ">=3.11"
+    - postgres: ">=14"
+
+agent:
+  summary_for_ai: |
+    You are looking at auth-core. It is the single source of truth for
+    who a request belongs to. Other capsules MUST call POST /introspect to
+    validate a token; they must NOT decode tokens themselves. If you need
+    a new claim (e.g. cohort_id), add it here, then expose it through
+    /introspect — do not invent parallel claim sources elsewhere.
+
+  extension_points:
+    - id: claim-enricher
+      where: src/auth/claims.py:enrich
+      contract: |
+        Pure function (token_record) -> dict of additional claims.
+        Must not perform I/O.
+
+  avoid:
+    - Decoding session tokens outside this capsule.
+    - Storing plaintext passwords or password hashes outside the students table.
+    - Adding role checks that bypass the introspection endpoint.
+
+  glossary:
+    student: an authenticated user with the `student` role
+    introspection: the act of exchanging a token for verified claims
+    claim: a verified key/value (e.g. student_id, role) returned by introspect
+
+verification:
+  health_checks:
+    - id: package-imports
+      command: python -c "import json; print('ok')"
+      timeout_seconds: 10
+
+  functional_tests:
+    - id: token-roundtrip-placeholder
+      command: python -c "print('functional test would issue token then introspect it')"
+      proves:
+        - A freshly issued token introspects to the claims it was issued with.
+
+  integration_tests: []
+
+  invariants:
+    - A revoked token must never successfully introspect.
+    - Two distinct students must never share a session token.
+    - Token signing keys must never appear in logs.
+
+compatibility:
+  tested_with:
+    - capsule: lab-runtime-docker
+      versions: ">=0.2.0 <1.0.0"

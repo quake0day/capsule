@@ -1,0 +1,326 @@
+"""Capsule CLI."""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from capsule import __version__
+from capsule.bundle import render as render_bundle
+from capsule.compose import compose as compose_capsules
+from capsule.compose import topo_order
+from capsule.graph import render_dot, render_text
+from capsule.loader import CapsuleLoadError, LoadedCapsule, discover, load
+from capsule.schema import warnings_for
+from capsule.templates import STARTER_CAPSULE_YAML, STARTER_README
+from capsule.verify import Status, verify
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Self-verifying context capsules for AI-native software development.",
+)
+console = Console()
+err_console = Console(stderr=True)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"capsule {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """capsule — manage context capsules."""
+
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def init(
+    name: str = typer.Argument(..., help="Capsule name (kebab-case)."),
+    directory: Path = typer.Option(
+        Path("."),
+        "--dir",
+        "-d",
+        help="Parent directory; the capsule is created at <dir>/<name>/.",
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing capsule.yaml."),
+) -> None:
+    """Scaffold a new capsule at <dir>/<name>/."""
+    if not re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", name):
+        err_console.print(f"[red]invalid capsule name '{name}': must be kebab-case[/red]")
+        raise typer.Exit(code=2)
+    target_dir = directory.expanduser().resolve() / name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    capsule_path = target_dir / "capsule.yaml"
+    readme_path = target_dir / "README.md"
+
+    if capsule_path.exists() and not force:
+        err_console.print(f"[red]{capsule_path} already exists (use --force to overwrite)[/red]")
+        raise typer.Exit(code=1)
+    capsule_path.write_text(STARTER_CAPSULE_YAML.format(name=name), encoding="utf-8")
+    if not readme_path.exists():
+        readme_path.write_text(STARTER_README.format(name=name), encoding="utf-8")
+    console.print(f"[green]created[/green] {capsule_path}")
+
+
+# ---------------------------------------------------------------------------
+# validate
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def validate(
+    paths: list[Path] = typer.Argument(..., help="Capsule directories or capsule.yaml files."),
+) -> None:
+    """Validate one or more capsule.yaml files against the spec."""
+    any_failed = False
+    for p in paths:
+        try:
+            lc = load(p)
+        except CapsuleLoadError as exc:
+            any_failed = True
+            err_console.print(f"[red]✗[/red] {exc}")
+            continue
+        warns = warnings_for(lc.capsule)
+        console.print(f"[green]✓[/green] {lc.path}  ({lc.name} v{lc.capsule.version})")
+        for w in warns:
+            console.print(f"  [yellow]warning[/yellow]: {w}")
+    if any_failed:
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="verify")
+def verify_command(
+    paths: list[Path] = typer.Argument(
+        ...,
+        metavar="PATHS",
+        help="Capsule directories, capsule.yaml files, or a parent directory to discover capsules in.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit a JSON report to stdout."),
+    skip_integration: bool = typer.Option(
+        False, "--skip-integration", help="Skip integration tests."
+    ),
+) -> None:
+    """Run each capsule's verification suite."""
+    capsules = _resolve_capsules(paths)
+    report = verify(capsules, include_integration=not skip_integration)
+
+    if json_out:
+        print(json.dumps(report.to_dict(), indent=2))
+        raise typer.Exit(code=0 if report.ok else 1)
+
+    table = Table(title="Capsule Verification Report", show_lines=False)
+    table.add_column("capsule", style="cyan")
+    table.add_column("category")
+    table.add_column("check")
+    table.add_column("status")
+    table.add_column("ms", justify="right")
+    table.add_column("notes", overflow="fold")
+
+    for r in report.results:
+        notes = r.skip_reason or ""
+        if not notes and r.status == Status.FAIL and r.stderr_tail:
+            notes = r.stderr_tail.strip().splitlines()[-1][:120]
+        table.add_row(
+            r.capsule,
+            r.category,
+            r.id,
+            _color_status(r.status),
+            str(r.duration_ms),
+            notes,
+        )
+    console.print(table)
+
+    summary = report.summary()
+    console.print(
+        f"[bold]Summary:[/bold] "
+        f"[green]{summary['pass']} pass[/green]  "
+        f"[red]{summary['fail']} fail[/red]  "
+        f"[yellow]{summary['timeout']} timeout[/yellow]  "
+        f"[yellow]{summary['error']} error[/yellow]  "
+        f"[blue]{summary['skipped']} skipped[/blue]"
+    )
+    raise typer.Exit(code=0 if report.ok else 1)
+
+
+# ---------------------------------------------------------------------------
+# compose
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="compose")
+def compose_command(
+    paths: list[Path] = typer.Argument(..., metavar="PATHS"),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit a JSON description of the composition."
+    ),
+) -> None:
+    """Cross-check a set of capsules and report missing/conflicting dependencies."""
+    capsules = _resolve_capsules(paths)
+    comp = compose_capsules(capsules)
+
+    if json_out:
+        out = {
+            "ok": comp.ok,
+            "capsules": [
+                {"name": c.name, "version": c.capsule.version, "path": str(c.path)}
+                for c in comp.capsules
+            ],
+            "issues": [
+                {"capsule": i.capsule, "severity": i.severity, "message": i.message}
+                for i in comp.issues
+            ],
+        }
+        print(json.dumps(out, indent=2))
+        raise typer.Exit(code=0 if comp.ok else 1)
+
+    console.print(f"[bold]Composition:[/bold] {len(comp.capsules)} capsules")
+    for c in comp.capsules:
+        console.print(f"  • {c.name} v{c.capsule.version}  [dim]{c.path}[/dim]")
+
+    if comp.issues:
+        console.print()
+        for i in comp.issues:
+            tag = "[red]error[/red]" if i.severity == "error" else "[yellow]warn[/yellow]"
+            console.print(f"  {tag}  {i.capsule}: {i.message}")
+    else:
+        console.print("[green]no issues[/green]")
+
+    raise typer.Exit(code=0 if comp.ok else 1)
+
+
+# ---------------------------------------------------------------------------
+# graph
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def graph(
+    paths: list[Path] = typer.Argument(..., metavar="PATHS"),
+    fmt: str = typer.Option("text", "--format", "-f", help="text | dot"),
+) -> None:
+    """Render the capsule dependency graph."""
+    capsules = _resolve_capsules(paths)
+    comp = compose_capsules(capsules)
+    if fmt == "text":
+        print(render_text(comp))
+    elif fmt == "dot":
+        print(render_dot(comp))
+    else:
+        err_console.print(f"[red]unknown format '{fmt}'. Use 'text' or 'dot'.[/red]")
+        raise typer.Exit(code=2)
+
+
+# ---------------------------------------------------------------------------
+# bundle
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def bundle(
+    paths: list[Path] = typer.Argument(..., metavar="PATHS"),
+    for_target: str = typer.Option(
+        "claude",
+        "--for",
+        help="Output target: claude | codex | agents | github | prompt",
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Write to file instead of stdout."
+    ),
+) -> None:
+    """Render the composed capsules as an agent-ready document."""
+    capsules = _resolve_capsules(paths)
+    comp = compose_capsules(capsules)
+    try:
+        ordered = topo_order(comp)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        text = render_bundle(for_target, ordered)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    if output:
+        output.write_text(text, encoding="utf-8")
+        console.print(
+            f"[green]wrote[/green] {output} ({len(text)} chars, target={for_target})"
+        )
+    else:
+        sys.stdout.write(text)
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_capsules(paths: list[Path]) -> list[LoadedCapsule]:
+    """Accept a mix of files, capsule dirs, and parent dirs (auto-discover)."""
+    out: list[LoadedCapsule] = []
+    seen: set[Path] = set()
+    for p in paths:
+        try:
+            resolved = p.expanduser().resolve()
+            if resolved.is_dir() and not (resolved / "capsule.yaml").exists():
+                found = discover(resolved)
+                if not found:
+                    raise CapsuleLoadError(f"no capsules found under {resolved}")
+                for lc in found:
+                    if lc.path not in seen:
+                        out.append(lc)
+                        seen.add(lc.path)
+            else:
+                lc = load(resolved)
+                if lc.path not in seen:
+                    out.append(lc)
+                    seen.add(lc.path)
+        except CapsuleLoadError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+    if not out:
+        err_console.print("[red]no capsules to operate on[/red]")
+        raise typer.Exit(code=1)
+    return out
+
+
+def _color_status(s: Status) -> str:
+    return {
+        Status.PASS: "[green]pass[/green]",
+        Status.FAIL: "[red]fail[/red]",
+        Status.TIMEOUT: "[yellow]timeout[/yellow]",
+        Status.SKIPPED: "[blue]skipped[/blue]",
+        Status.ERROR: "[yellow]error[/yellow]",
+    }[s]
+
+
+if __name__ == "__main__":
+    app()

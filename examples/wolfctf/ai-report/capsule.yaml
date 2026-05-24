@@ -1,0 +1,109 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: ai-report
+version: 0.1.2
+type: subsystem
+domain: education.ctf
+
+maintainers:
+  - name: WolfCTF Platform Team
+
+purpose:
+  summary: |
+    Subscribes to lab lifecycle events, collects per-student behavior
+    traces (commands tried, files touched, errors hit), and generates a
+    natural-language progress report for the instructor at the end of a
+    lab session.
+  owns:
+    - per-lab behavior trace storage
+    - LLM-backed report generation pipeline
+    - instructor-facing report HTTP API
+  does_not_own:
+    - container lifecycle (see lab-runtime-docker)
+    - authentication (see auth-core)
+    - grading or scoring (the scoreboard capsule consumes reports, doesn't live here)
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: ai-report-read
+      spec: openapi/ai-report.yaml
+
+  requires:
+    - kind: event
+      name: lab.created
+      from_capsule: lab-runtime-docker
+      version: ">=0.2 <1.0"
+    - kind: event
+      name: lab.destroyed
+      from_capsule: lab-runtime-docker
+      version: ">=0.2 <1.0"
+    - kind: http_api
+      name: auth-introspect
+      from_capsule: auth-core
+      version: ">=0.2 <1.0"
+    - kind: env
+      name: AI_REPORT_LLM_API_KEY
+      description: API key for the LLM used to draft reports.
+
+dependencies:
+  capsules:
+    - name: lab-runtime-docker
+      version: ">=0.2.0 <1.0.0"
+    - name: auth-core
+      version: ">=0.2.0 <1.0.0"
+  runtime:
+    - python: ">=3.11"
+
+agent:
+  summary_for_ai: |
+    You are looking at ai-report. It is downstream of lab-runtime-docker and
+    auth-core. It consumes lab.* events, never reaches into lab containers
+    directly. Reports are drafted by an LLM — treat that LLM as untrusted:
+    sanitize trace inputs before prompting, and never echo back arbitrary
+    student input as instructions.
+  extension_points:
+    - id: trace-redactor
+      where: src/aireport/redact.py:redact
+      contract: |
+        Pure function (trace_event) -> trace_event with secrets removed.
+        Called before any LLM prompting.
+  avoid:
+    - Calling Docker or the lab runtime directly; subscribe to events.
+    - Persisting raw LLM prompts in instructor-readable storage (might
+      leak other students' data).
+  glossary:
+    trace: an append-only log of student actions within one lab session
+    report: an instructor-facing natural-language summary derived from a trace
+
+verification:
+  health_checks:
+    - id: python-imports-fine
+      command: python -c "print('ai-report up')"
+
+  functional_tests:
+    - id: redactor-strips-known-secrets
+      command: python -c "print('would assert redact() removes a fake AWS key')"
+      proves:
+        - The redactor removes recognized secret patterns from traces.
+
+  integration_tests:
+    - id: end-to-end-trace-to-report
+      requires_capsules: [lab-runtime-docker, auth-core]
+      command: |
+        python -c "print('e2e: create lab -> run command -> destroy lab -> report generated')"
+      proves:
+        - A full lifecycle produces a non-empty instructor report.
+
+  invariants:
+    - One student's trace must never appear in another student's report.
+    - Reports must not include raw LLM API keys, even if a trace did.
+    - Report generation must be idempotent for a given (student_id, lab_id).
+
+compatibility:
+  tested_with:
+    - capsule: lab-runtime-docker
+      versions: ">=0.2.0 <1.0.0"
+    - capsule: auth-core
+      versions: ">=0.2.0 <1.0.0"

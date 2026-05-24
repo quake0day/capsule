@@ -1,0 +1,131 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: lab-runtime-docker
+version: 0.2.1
+type: subsystem
+domain: education.ctf
+
+maintainers:
+  - name: WolfCTF Platform Team
+
+purpose:
+  summary: |
+    Runs per-student lab containers on a single Docker host and exposes a
+    browser-accessible terminal. One lab belongs to exactly one student,
+    for the duration of one challenge attempt.
+  owns:
+    - container lifecycle (create / pause / destroy)
+    - per-lab metadata persisted to disk
+    - browser terminal proxy
+    - lab.created / lab.destroyed events
+  does_not_own:
+    - authentication of students (see auth-core)
+    - scoring or grading (see ai-report and the scoreboard capsule)
+    - long-term storage of student artifacts
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: lab-control
+      spec: openapi/lab-control.yaml
+    - kind: cli
+      name: labctl
+      entrypoint: bin/labctl
+    - kind: event
+      name: lab.created
+      payload_schema: schemas/lab-created.json
+    - kind: event
+      name: lab.destroyed
+      payload_schema: schemas/lab-destroyed.json
+
+  requires:
+    - kind: http_api
+      name: auth-introspect
+      from_capsule: auth-core
+      version: ">=0.2 <1.0"
+    - kind: env
+      name: DOCKER_HOST
+      description: Docker daemon socket; defaults to unix:///var/run/docker.sock.
+
+dependencies:
+  capsules:
+    - name: auth-core
+      version: ">=0.2.0 <1.0.0"
+  runtime:
+    - docker: ">=24"
+    - python: ">=3.11"
+
+agent:
+  summary_for_ai: |
+    You are looking at the lab-runtime capsule. It owns container lifecycle
+    for student CTF labs. It does NOT own authentication — assume an upstream
+    auth-core capsule has already authorized the caller and passed a verified
+    `student_id` in the request context. Lab metadata is world-readable to
+    instructors, so it must never contain secrets.
+
+  extension_points:
+    - id: lab-image-resolver
+      where: src/runtime/images.py:resolve_image
+      contract: |
+        Given (challenge_id, student_id) return a Docker image reference.
+        Must be deterministic for a given challenge_id; do not branch on
+        student_id (would break instructor reproduction of student state).
+
+  avoid:
+    - Calling the Docker socket from HTTP handlers directly; always go
+      through src/runtime/docker_client.py.
+    - Storing student secrets in lab metadata.
+    - "Re-implementing auth: introspect the bearer token via auth-core."
+
+  glossary:
+    lab: a single container instance owned by exactly one student
+    challenge: a reusable CTF problem definition; spawns labs
+
+verification:
+  health_checks:
+    - id: docker-cli-available
+      command: docker --version
+      timeout_seconds: 10
+
+  functional_tests:
+    - id: lab-control-spec-present
+      command: python -c "import os, sys; sys.exit(0)"
+      proves:
+        - The lab-control OpenAPI spec is present and parseable.
+
+  integration_tests:
+    - id: auth-required-for-lab-create
+      requires_capsules: [auth-core]
+      command: python -c "print('integration test would call lab-create without a token and expect 401')"
+      proves:
+        - Unauthenticated requests are rejected before any container starts.
+
+  invariants:
+    - A lab instance must always belong to exactly one student.
+    - A student must not access another student's lab container.
+    - Destroying a lab must revoke all browser-terminal sessions for it.
+    - Lab metadata must not contain plaintext secrets.
+
+compatibility:
+  tested_with:
+    - capsule: auth-core
+      versions: ">=0.2.0 <1.0.0"
+
+handoff:
+  objective: |
+    Emit lab.created events that the ai-report capsule can consume.
+  completed:
+    - Event schema drafted at schemas/lab-created.json.
+    - Emitter stub in src/runtime/events.py.
+  remaining:
+    - Hook emitter into lifecycle.create_lab.
+    - Add a functional test that asserts the event payload shape.
+  open_questions:
+    - Should events be fire-and-forget or persisted to an outbox table?
+  next_agent_should:
+    - Start at src/runtime/lifecycle.py:create_lab and emit the event
+      after the container reaches RUNNING.
+  do_not_touch:
+    - src/runtime/docker_client.py — recently stabilised, no changes
+      needed for this objective.
