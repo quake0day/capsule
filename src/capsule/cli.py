@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -14,11 +16,19 @@ from rich.table import Table
 
 from capsule import __version__
 from capsule.bundle import render as render_bundle
+from capsule.client import (
+    CapsuleClientError,
+    parse_address,
+    pull as pull_capsule,
+)
 from capsule.compose import compose as compose_capsules
 from capsule.compose import topo_order
 from capsule.graph import render_dot, render_text
 from capsule.loader import CapsuleLoadError, LoadedCapsule, discover, load
+from capsule.manpage import render_man
 from capsule.schema import warnings_for
+from capsule.status import build as build_status
+from capsule.status import print_status, to_json_dict
 from capsule.templates import STARTER_CAPSULE_YAML, STARTER_README
 from capsule.verify import Status, verify
 
@@ -307,8 +317,131 @@ def bundle(
 
 
 # ---------------------------------------------------------------------------
+# pull
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def pull(
+    address: str = typer.Argument(..., help="capsule://<owner>/<name>[@<version>]"),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-clone even if cached."),
+) -> None:
+    """Resolve + fetch a capsule via the registry; print its local path."""
+    try:
+        addr = parse_address(address)
+        path = pull_capsule(addr, refresh=refresh)
+    except CapsuleClientError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]pulled[/green] {addr}  →  {path}")
+
+
+# ---------------------------------------------------------------------------
+# man
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def man(
+    target: str = typer.Argument(..., help="capsule://<owner>/<name>[@<v>] or local path"),
+) -> None:
+    """Render a single capsule's man page to the terminal."""
+    try:
+        lc = _load_one(target)
+    except (CapsuleClientError, CapsuleLoadError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    render_man(lc.capsule, console)
+
+
+# ---------------------------------------------------------------------------
+# status
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def status(
+    target: str = typer.Argument(..., help="capsule://<owner>/<name>[@<v>] or local path"),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON to stdout."),
+) -> None:
+    """One-screen snapshot: version, contract surface, env satisfaction, handoff."""
+    addr_str: str | None = None
+    try:
+        if _looks_like_address(target):
+            addr_str = str(parse_address(target))
+        lc = _load_one(target)
+    except (CapsuleClientError, CapsuleLoadError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    report = build_status(lc, address=addr_str)
+    if json_out:
+        print(json.dumps(to_json_dict(report), indent=2))
+    else:
+        print_status(report, console)
+
+
+# ---------------------------------------------------------------------------
+# serve
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def serve(
+    port: int = typer.Option(8788, "--port", "-p", help="Port for wrangler pages dev."),
+    server_dir: Path = typer.Option(
+        Path("server"),
+        "--server-dir",
+        help="Directory containing the Pages project (default: ./server).",
+    ),
+) -> None:
+    """Run the registry server locally (shells out to `wrangler pages dev`)."""
+    target = server_dir.expanduser().resolve()
+    if not (target / "wrangler.toml").exists():
+        err_console.print(
+            f"[red]no wrangler.toml at {target}[/red].  "
+            f"Run from a checkout of the capsule repo, or use --server-dir."
+        )
+        raise typer.Exit(code=1)
+    npx = shutil.which("npx")
+    if not npx:
+        err_console.print("[red]npx is not on PATH[/red]. Install Node.js 18+.")
+        raise typer.Exit(code=1)
+    console.print(
+        f"[green]starting[/green] wrangler pages dev {target} on port {port}\n"
+        f"   (set CAPSULE_REGISTRY=http://127.0.0.1:{port} in another shell)"
+    )
+    try:
+        subprocess.run(
+            [npx, "wrangler", "pages", "dev", str(target), "--port", str(port), "--ip", "127.0.0.1"],
+            check=False,
+        )
+    except KeyboardInterrupt:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+def _looks_like_address(s: str) -> bool:
+    return s.startswith("capsule://") or (
+        "/" in s
+        and not s.startswith(".")
+        and not s.startswith("/")
+        and not re.match(r"^[a-zA-Z]:", s)  # not a Windows drive path
+        and not Path(s).exists()
+    )
+
+
+def _load_one(target: str) -> LoadedCapsule:
+    """Accept either a `capsule://` address or a local file/dir path."""
+    if _looks_like_address(target):
+        addr = parse_address(target)
+        path = pull_capsule(addr)
+        return load(path)
+    return load(Path(target))
 
 
 def _resolve_capsules(paths: list[Path]) -> list[LoadedCapsule]:

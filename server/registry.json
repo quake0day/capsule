@@ -1,0 +1,16 @@
+{
+  "$schema": "./registry.schema.json",
+  "comment": "capsule-registry v0.2 static registry. Adding a capsule = open a PR against this file. Resolver: capsule://<owner>/<name>[@<version>] (highest semver if version omitted). In v0.3 these move to KV; the shape stays the same.",
+  "entries": [
+    { "owner": "quake0day", "name": "yingjieli-admin-auth",        "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/admin-auth/capsule.yaml" },
+    { "owner": "quake0day", "name": "yingjieli-content-store",     "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/content-store/capsule.yaml" },
+    { "owner": "quake0day", "name": "yingjieli-image-store",       "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/image-store/capsule.yaml" },
+    { "owner": "quake0day", "name": "yingjieli-public-site",       "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/public-site/capsule.yaml" },
+    { "owner": "quake0day", "name": "yingjieli-admin-ui",          "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/admin-ui/capsule.yaml" },
+    { "owner": "quake0day", "name": "yingjieli-cloudflare-deploy", "version": "1.0.0", "git_url": "https://github.com/quake0day/yingjieli", "ref": "main", "path": "capsules/cloudflare-deploy/capsule.yaml" },
+
+    { "owner": "capsule-examples", "name": "auth-core",          "version": "0.3.0", "git_url": "https://github.com/quake0day/capsule-examples", "ref": "main", "path": "wolfctf/auth-core/capsule.yaml" },
+    { "owner": "capsule-examples", "name": "lab-runtime-docker", "version": "0.2.1", "git_url": "https://github.com/quake0day/capsule-examples", "ref": "main", "path": "wolfctf/lab-runtime/capsule.yaml" },
+    { "owner": "capsule-examples", "name": "ai-report",          "version": "0.1.2", "git_url": "https://github.com/quake0day/capsule-examples", "ref": "main", "path": "wolfctf/ai-report/capsule.yaml" }
+  ]
+}

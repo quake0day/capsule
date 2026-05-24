@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects for capsule-registry
+
+# Canonical: /capsule/<owner>/<name>  →  /c/<owner>/<name>
+/capsule/*    /c/:splat    301

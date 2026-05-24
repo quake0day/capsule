@@ -1,0 +1,6 @@
+name = "capsule-registry"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "."
+
+# No KV / R2 in v0.2 — registry is the committed registry.yaml file at the
+# root of this Pages project. KV will land in v0.3 when we add write paths.

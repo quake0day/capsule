@@ -1,0 +1,20 @@
+{
+  "name": "capsule-registry-server",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The capsule registry server: resolves capsule:// URLs and renders man-page HTML. Cloudflare Pages + Functions.",
+  "scripts": {
+    "dev": "wrangler pages dev .",
+    "deploy": "wrangler pages deploy . --project-name capsule-registry",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.80.0"
+  }
+}

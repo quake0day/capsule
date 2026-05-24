@@ -111,18 +111,38 @@ def _check_interface_requires(
                 )
             )
             continue
-        provided = [p for p in target.capsule.interfaces.provides if p.kind == req.kind and p.name == req.name]
-        if not provided:
-            comp.issues.append(
-                CompositionIssue(
-                    capsule=c.name,
-                    severity="warning",
-                    message=(
-                        f"capsule '{target.name}' does not declare a provided "
-                        f"interface named '{req.name}' of kind '{req.kind}'"
-                    ),
+        same_name = [p for p in target.capsule.interfaces.provides if p.name == req.name]
+        exact = [p for p in same_name if p.kind == req.kind]
+        if not exact:
+            if same_name:
+                # Typed-pipe error: name matches but kind doesn't.
+                # Unix analogue: wiring stdout to a program that wanted stdin
+                # of a different file type.
+                wrong_kinds = sorted({p.kind for p in same_name})
+                comp.issues.append(
+                    CompositionIssue(
+                        capsule=c.name,
+                        severity="error",
+                        message=(
+                            f"typed-pipe mismatch: requires {req.kind}:{req.name} "
+                            f"from '{target.name}', but it provides {req.name} as "
+                            f"kind {', '.join(wrong_kinds)}"
+                        ),
+                    )
                 )
-            )
+            else:
+                # Name not found at all — could be a kind we don't model,
+                # so stay at warning per the spec's open-kind rule.
+                comp.issues.append(
+                    CompositionIssue(
+                        capsule=c.name,
+                        severity="warning",
+                        message=(
+                            f"capsule '{target.name}' does not declare a provided "
+                            f"interface named '{req.name}' of kind '{req.kind}'"
+                        ),
+                    )
+                )
         if req.version:
             _check_version(c, target, req.version, comp)
 

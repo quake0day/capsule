@@ -1,0 +1,140 @@
+apiVersion: capsule.dev/v0.1
+kind: Capsule
+
+name: capsule-registry-server
+version: 0.2.0
+type: subsystem
+domain: capsule.dev
+
+maintainers:
+  - name: Quake
+    email: quake0day@gmail.com
+
+purpose:
+  summary: |
+    The capsule registry server. Resolves `capsule://<owner>/<name>[@<version>]`
+    addresses to concrete git sources, fetches the referenced capsule.yaml
+    from GitHub raw, and serves both a JSON API (for the CLI) and a
+    human-readable man-page HTML (for browsers). Cloudflare Pages + Functions
+    in TypeScript.
+  owns:
+    - the static registry.json mapping (owner, name, version) → git source
+    - GET /api/v1/resolve — pure naming layer
+    - GET /api/v1/capsule — resolved + fetched + parsed capsule
+    - GET /c/<owner>/<name>[@<version>] — server-rendered man-page HTML
+    - GET / — registry index (server-rendered)
+    - the CDN cache strategy for resolver and capsule responses
+  does_not_own:
+    - "the spec of capsule.yaml itself (lives in capsule repo /SPEC.md)"
+    - "the capsules it indexes (those live in their own git repos)"
+    - "the capsule CLI (separate codebase, capsule/src/capsule/)"
+    - "authentication, push, or registry mutations (deferred to L3)"
+
+interfaces:
+  provides:
+    - kind: http_api
+      name: resolve
+      entrypoint: functions/api/v1/resolve/[[slug]].ts
+      description: "GET /api/v1/resolve/<owner>/<name>[@<version>] → git source JSON."
+    - kind: http_api
+      name: capsule-json
+      entrypoint: functions/api/v1/capsule/[[slug]].ts
+      description: "GET /api/v1/capsule/<owner>/<name>[@<version>] → resolved + parsed capsule as JSON."
+    - kind: http_api
+      name: capsule-man
+      entrypoint: functions/c/[[slug]].ts
+      description: "GET /c/<owner>/<name>[@<version>] → man-page HTML."
+    - kind: http_api
+      name: index
+      entrypoint: functions/index.ts
+      description: "GET / → registry index HTML."
+
+  requires:
+    - kind: env
+      name: CF_PAGES_ASSETS
+      description: |
+        Implicit; provided by Cloudflare Pages. The server reads no other env
+        var in v0.2 — registry data is committed in registry.json.
+
+dependencies:
+  capsules: []
+  runtime:
+    - node: ">=18"
+    - cloudflare-pages: "*"
+
+agent:
+  summary_for_ai: |
+    This is the registry server. It is intentionally thin: it reads a
+    static registry.json, resolves an address to a (git_url, ref, path)
+    triple, fetches the raw capsule.yaml from GitHub, parses it with the
+    `yaml` package, and renders. There is NO database. There is NO write
+    path. Everything is GET. Adding a capsule = open a PR to registry.json
+    and redeploy.
+
+    The man-page renderer is server-side only — there is no client JS in
+    v0.2. Avoid adding any until you have a concrete need; the page must
+    remain readable with JS disabled and consumable by AI scrapers.
+
+  extension_points:
+    - id: registry-schema
+      where: functions/_lib/registry.ts
+      contract: |
+        The shape of registry.json's entries[]. Add new optional fields
+        (e.g. `mirror`, `signature`) at the entry level. Do NOT introduce
+        a different storage backend in this file — that lives behind the
+        `resolve()` function so v0.3 KV migration is a single-file change.
+
+    - id: source-fetcher
+      where: functions/_lib/github.ts
+      contract: |
+        fetchCapsule(entry) -> { capsule, raw, source_url }. Currently
+        github-only; extending to gitlab/bitbucket means adding a sibling
+        function and dispatching on entry.git_url host.
+
+    - id: render
+      where: functions/_lib/render.ts
+      contract: |
+        Pure (entry, capsule) -> HTML string. Must not read globals or
+        perform I/O. Add new sections by extending renderCapsule().
+
+  avoid:
+    - Adding client-side JavaScript without a clear reason; the page is
+      meant to be scrape-friendly for both humans and AI.
+    - Storing secrets in registry.json — there are none, by design.
+    - Caching responses that depend on registry state for longer than the
+      CDN entries in _headers; resolver mappings change with each deploy.
+    - Mutating data from a Function — there is no write path in v0.2.
+
+  glossary:
+    address: a capsule://<owner>/<name>[@<version>] string
+    resolver: the function that turns an address into a (git_url, ref, path)
+    man page: the server-rendered HTML page at /c/<owner>/<name>
+
+verification:
+  health_checks:
+    - id: typecheck
+      command: npm run typecheck
+      timeout_seconds: 60
+
+  functional_tests:
+    - id: registry-parses
+      command: node -e "const r=require('./registry.json');if(!Array.isArray(r.entries)){process.exit(1)}console.log('ok',r.entries.length,'entries')"
+      proves:
+        - registry.json parses and has an entries array.
+
+  integration_tests:
+    - id: dev-server-boots
+      command: node -e "console.log('declarative: wrangler pages dev . should serve /, /c/<...>, /api/v1/...')"
+      proves:
+        - wrangler pages dev brings the server up on localhost:8788.
+
+  invariants:
+    - The registry server never writes to any external store.
+    - GET /api/v1/resolve does not perform any network fetch beyond what is
+      necessary for caching headers.
+    - HTML responses do not include any client-side JavaScript in v0.2.
+    - The shape of registry.json's entries[] is the on-disk contract that
+      v0.3's KV migration must preserve.
+
+compatibility:
+  tested_with: []

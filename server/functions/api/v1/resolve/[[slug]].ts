@@ -1,0 +1,51 @@
+// GET /api/v1/resolve/<owner>/<name>[@<version>]
+// → { owner, name, version, git_url, ref, path, raw_url, source: "registry" }
+//
+// The pure naming layer: do not fetch the capsule itself, just translate a
+// `capsule://` address into a concrete git source. Cheap, cacheable.
+
+import type { PagesFunction } from "@cloudflare/workers-types";
+
+import { parseAddress, resolve } from "../../../_lib/registry";
+import { rawUrl } from "../../../_lib/github";
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+
+const joinSlug = (slug: string | string[] | undefined): string => {
+  if (!slug) return "";
+  return Array.isArray(slug) ? slug.join("/") : slug;
+};
+
+export const onRequestGet: PagesFunction = async ({ params }) => {
+  const slug = joinSlug(params.slug);
+  if (!slug) return json({ error: "missing slug" }, 400);
+
+  const addr = parseAddress(slug);
+  if (!addr) {
+    return json(
+      { error: `invalid address '${slug}'. Expected <owner>/<name>[@<version>].` },
+      400,
+    );
+  }
+
+  const entry = resolve(addr);
+  if (!entry) {
+    const v = addr.version ? "@" + addr.version : "";
+    return json({ error: `no capsule found for ${addr.owner}/${addr.name}${v}` }, 404);
+  }
+
+  return json({
+    owner: entry.owner,
+    name: entry.name,
+    version: entry.version,
+    git_url: entry.git_url,
+    ref: entry.ref,
+    path: entry.path,
+    raw_url: rawUrl(entry),
+    source: "registry",
+  });
+};

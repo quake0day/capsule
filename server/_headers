@@ -1,0 +1,25 @@
+# Cloudflare Pages headers for capsule-registry
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Resolver mappings rarely change — short edge cache + SWR is fine.
+/api/v1/resolve/*
+  Cache-Control: public, max-age=300, stale-while-revalidate=900
+
+# Capsule contents come from GitHub raw; refresh more often.
+/api/v1/capsule/*
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+# Rendered man-page HTML follows the capsule content cadence.
+/c/*
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+/
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
