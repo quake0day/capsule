@@ -1,8 +1,23 @@
 # Capsule
 
-**Self-verifying context capsules for AI-native software development.**
+**The AI-native Unix-like composition layer for software engineering.**
 
-> Git made code portable. Capsules make agent work state portable.
+> Unix piped text between programs. Capsule pipes engineering context between AI agents.
+>
+> *(Git made code portable. Capsules make agent work state portable.)*
+
+## Capsule Philosophy
+
+1. Do one subsystem well.
+2. Declare clear contracts.
+3. Make context machine-readable.
+4. Compose through standard interfaces.
+5. Verify every capsule independently.
+6. Preserve handoff state.
+7. Prefer small composable systems over monolithic agent prompts.
+
+See [`docs/L2-DESIGN.md`](docs/L2-DESIGN.md) for the Unix → Capsule
+correspondence and the v0.2 plan.
 
 ---
 

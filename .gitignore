@@ -17,6 +17,7 @@ htmlcov/
 .idea/
 .vscode/
 
-# Strategy / brainstorm notes — kept local. Use `git add -f idea.txt` to override.
+# Strategy / brainstorm notes — kept local. Use `git add -f <name>` to override.
 idea.txt
+unix.txt
 
