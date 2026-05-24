@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Capsule — Seed Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+<script src="deck-stage.js"></script>
+<style>
+  :root{
+    --bg: #0a0b0d;
+    --bg-2: #111316;
+    --bg-3: #16181c;
+    --line: #1f2227;
+    --line-2: #2a2e35;
+    --fg: #ecebe6;
+    --fg-2: #c9c7c0;
+    --dim: #7d7e85;
+    --dim-2: #56575d;
+    --accent: #8ef3a8;        /* terminal green */
+    --accent-dim: #5fb682;
+    --warn: #f3c98e;
+    --pink: #f39ec5;
+    --blue: #9ec8f3;
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: "IBM Plex Serif", Georgia, serif;
+
+    --type-display: 132px;
+    --type-title: 72px;
+    --type-subtitle: 44px;
+    --type-body: 32px;
+    --type-small: 26px;
+    --type-tiny: 22px;
+    --type-mono-label: 24px;
+
+    --pad-x: 110px;
+    --pad-top: 90px;
+    --pad-bottom: 90px;
+    --gap-title: 56px;
+    --gap-item: 28px;
+  }
+
+  html, body{ margin:0; padding:0; background:#000; color:var(--fg); font-family:var(--sans); }
+
+  deck-stage > section{
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    padding: var(--pad-top) var(--pad-x) var(--pad-bottom);
+    box-sizing: border-box;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* shared atoms */
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: var(--type-mono-label);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .eyebrow::before{
+    content: "";
+    width: 10px; height: 10px;
+    background: var(--accent);
+    display: inline-block;
+    border-radius: 1px;
+  }
+  .eyebrow.dim{ color: var(--dim); }
+  .eyebrow.dim::before{ background: var(--dim); }
+
+  .slide-num{
+    position:absolute; right:60px; bottom:48px;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim-2);
+    letter-spacing: 0.08em;
+  }
+  .slide-tag{
+    position:absolute; left:60px; bottom:48px;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim-2);
+    letter-spacing: 0.08em;
+  }
+
+  h1, h2, h3, p{ margin: 0; }
+
+  .title{
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: var(--type-title);
+    line-height: 1.06;
+    letter-spacing: -0.022em;
+    color: var(--fg);
+    max-width: 1500px;
+    text-wrap: balance;
+  }
+  .subtitle{
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: var(--type-subtitle);
+    line-height: 1.18;
+    color: var(--fg-2);
+    letter-spacing: -0.012em;
+    max-width: 1500px;
+    text-wrap: pretty;
+  }
+  .body{
+    font-size: var(--type-body);
+    line-height: 1.4;
+    color: var(--fg-2);
+    text-wrap: pretty;
+  }
+  .small{
+    font-size: var(--type-small);
+    line-height: 1.45;
+    color: var(--dim);
+  }
+  .mono{ font-family: var(--mono); }
+  .accent{ color: var(--accent); }
+  .dim{ color: var(--dim); }
+
+  /* ===== Slide 1: title ===== */
+  .s-title{
+    display: grid;
+    grid-template-rows: 1fr auto;
+  }
+  .s-title .stack{
+    align-self: center;
+  }
+  .s-title .wordmark{
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 180px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+  .s-title .wordmark .dot{ color: var(--accent); }
+  .s-title .tagline{
+    font-size: 40px;
+    color: var(--fg-2);
+    margin-top: 44px;
+    max-width: 1300px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .s-title .footer{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+  }
+  .s-title .blink{
+    display:inline-block;
+    width: 18px; height: 32px;
+    background: var(--accent);
+    margin-left: 8px;
+    transform: translateY(4px);
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  /* ===== Slide 2: problem (terminal prompt) ===== */
+  .s-problem{
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 90px;
+    align-items: center;
+  }
+  .terminal{
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+    font-family: var(--mono);
+  }
+  .terminal .bar{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: #0f1114;
+    border-bottom: 1px solid var(--line);
+    font-size: 24px;
+    color: var(--dim);
+  }
+  .terminal .dot{ width:12px; height:12px; border-radius: 50%; background:#2a2d33; }
+  .terminal .bar .title-t{ margin-left: 12px; }
+  .terminal .body-t{
+    padding: 30px 32px 38px;
+    font-size: 26px;
+    line-height: 1.55;
+    color: var(--fg-2);
+  }
+  .terminal .prompt{ color: var(--accent); }
+  .terminal .out{ color: var(--dim); }
+  .terminal .err{ color: var(--warn); }
+  .terminal .you{ color: var(--fg); }
+
+  .problem-copy h2{
+    font-size: var(--type-title);
+    line-height: 1.05;
+    font-weight: 500;
+    letter-spacing: -0.022em;
+    margin-bottom: 32px;
+  }
+  .problem-copy p{
+    font-size: var(--type-body);
+    line-height: 1.4;
+    color: var(--fg-2);
+    margin-bottom: 18px;
+  }
+
+  /* ===== Slide 3: stack gap ===== */
+  .s-stack{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .stack-row{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px;
+    align-items: stretch;
+  }
+  .stack-card{
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 32px 30px 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 360px;
+  }
+  .stack-card.missing{
+    border: 1px dashed var(--accent);
+    background: linear-gradient(180deg, rgba(142,243,168,0.06), rgba(142,243,168,0.02));
+  }
+  .stack-card .layer{
+    font-family: var(--mono);
+    font-size: 24px;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+  .stack-card.missing .layer{ color: var(--accent); }
+  .stack-card .who{
+    font-size: 38px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--fg);
+    line-height: 1.1;
+  }
+  .stack-card.missing .who{ color: var(--accent); font-family: var(--mono); font-weight:500; }
+  .stack-card .what{
+    font-size: 24px;
+    line-height: 1.4;
+    color: var(--fg-2);
+  }
+  .stack-card .unit{
+    margin-top: auto;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+  }
+
+  /* ===== Slide 4: definition ===== */
+  .s-def{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 64px;
+  }
+  .def-callout{
+    border-left: 4px solid var(--accent);
+    padding-left: 40px;
+  }
+  .def-callout .lede{
+    font-size: 60px;
+    line-height: 1.12;
+    color: var(--fg);
+    letter-spacing: -0.018em;
+    font-weight: 400;
+  }
+  .def-callout .lede em{
+    font-style: normal;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-weight: 500;
+  }
+  .def-row{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px;
+    align-self: end;
+  }
+  .def-item .n{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    margin-bottom: 18px;
+  }
+  .def-item .k{
+    font-size: 32px;
+    font-weight: 500;
+    color: var(--fg);
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+  }
+  .def-item .d{
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--dim);
+  }
+
+  /* ===== Slide 5: anatomy ===== */
+  .s-anatomy{
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    gap: 80px;
+    align-items: center;
+  }
+  .anatomy-frame{
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 28px 32px;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--fg-2);
+    line-height: 1.7;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+  }
+  .anatomy-frame .file-head{
+    color: var(--dim);
+    font-size: 24px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+    letter-spacing: 0.08em;
+  }
+  .anatomy-frame .k{ color: var(--accent); }
+  .anatomy-frame .s{ color: var(--warn); }
+  .anatomy-frame .c{ color: var(--dim); }
+  .anatomy-frame .ind{ padding-left: 28px; }
+  .anatomy-copy h2{
+    font-size: var(--type-title);
+    line-height: 1.05;
+    font-weight: 500;
+    letter-spacing: -0.022em;
+    margin-bottom: 36px;
+  }
+  .anatomy-copy ul{
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .anatomy-copy li{
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    align-items: baseline;
+    gap: 22px;
+    font-size: var(--type-body);
+    line-height: 1.35;
+    color: var(--fg-2);
+  }
+  .anatomy-copy li .marker{
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 24px;
+  }
+  .anatomy-copy li strong{
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  /* ===== Slide 6: unix analogy ===== */
+  .s-unix{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .unix-quote{
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 56px;
+    line-height: 1.18;
+    color: var(--fg);
+    letter-spacing: -0.012em;
+    max-width: 1500px;
+  }
+  .unix-quote .accent{ color: var(--accent); font-style: normal; font-family: var(--mono); }
+  .unix-table{
+    display: grid;
+    grid-template-columns: 1fr 100px 1fr;
+    align-items: stretch;
+    border-top: 1px solid var(--line);
+    align-self: end;
+  }
+  .unix-table > div{
+    padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 28px;
+    line-height: 1.3;
+    display: flex;
+    align-items: center;
+  }
+  .unix-table .lh{ color: var(--dim); font-family: var(--mono); font-size: 26px; }
+  .unix-table .arr{ justify-content: center; color: var(--dim-2); font-family: var(--mono); }
+  .unix-table .rh{ color: var(--fg); }
+  .unix-table .rh .a{ color: var(--accent); font-family: var(--mono); }
+  .unix-table .head{
+    font-family: var(--mono); font-size: 24px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim-2); padding: 16px 0;
+  }
+
+  /* ===== Slide 7: demo / how it works ===== */
+  .s-how{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .steps{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+    align-self: stretch;
+  }
+  .step{
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .step .n{
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 24px;
+    letter-spacing: 0.1em;
+  }
+  .step .h{
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1.15;
+    color: var(--fg);
+    letter-spacing: -0.012em;
+  }
+  .step .d{
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--dim);
+  }
+  .step .term{
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 22px 24px;
+    font-family: var(--mono);
+    font-size: 24px;
+    line-height: 1.55;
+    color: var(--fg-2);
+    flex: 1;
+    white-space: pre-line;
+  }
+  .step .term .p{ color: var(--accent); }
+  .step .term .o{ color: var(--dim); }
+  .step .term .h-line{ color: var(--fg); }
+
+  /* ===== Slide 8: why now ===== */
+  .s-why{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .why-grid{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+    align-content: center;
+  }
+  .why-card{
+    border-top: 1px solid var(--line);
+    padding-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .why-card .num{
+    font-family: var(--mono);
+    font-size: 72px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .why-card .h{
+    font-size: 32px;
+    font-weight: 500;
+    color: var(--fg);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .why-card .d{
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--dim);
+  }
+
+  /* ===== Slide 9: market positioning ===== */
+  .s-market{
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 80px;
+    align-items: center;
+  }
+  .market-copy h2{
+    font-size: var(--type-title);
+    line-height: 1.05;
+    font-weight: 500;
+    letter-spacing: -0.022em;
+    margin-bottom: 36px;
+  }
+  .market-copy p{
+    font-size: var(--type-body);
+    line-height: 1.4;
+    color: var(--fg-2);
+    margin-bottom: 22px;
+  }
+  .layers{
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .layer-bar{
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    align-items: center;
+    gap: 28px;
+    padding: 24px 28px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .layer-bar .role{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .layer-bar .name{
+    font-size: 30px;
+    color: var(--fg);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .layer-bar.us{
+    border-color: var(--accent);
+    background: linear-gradient(90deg, rgba(142,243,168,0.10), rgba(142,243,168,0.02));
+  }
+  .layer-bar.us .role{ color: var(--accent); }
+  .layer-bar.us .name{ color: var(--accent); }
+
+  /* ===== Slide 10: traction ===== */
+  .s-traction{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .traction-grid{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    align-content: stretch;
+  }
+  .stat{
+    border-top: 1px solid var(--line);
+    padding-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .stat .v{
+    font-family: var(--mono);
+    font-size: 88px;
+    font-weight: 500;
+    color: var(--fg);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .stat .v .u{ font-size: 36px; color: var(--accent); margin-left: 4px; }
+  .stat .l{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .stat .d{
+    font-size: 24px;
+    color: var(--fg-2);
+    line-height: 1.4;
+  }
+
+  .pilots{
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .pilot{
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pilot .tag{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .pilot .name{
+    font-size: 28px;
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .pilot .desc{
+    font-size: 24px;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+
+  /* ===== Slide 11: business model ===== */
+  .s-biz{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .biz-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 32px;
+  }
+  .biz-card{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 36px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    background: var(--bg-2);
+  }
+  .biz-card .pos{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .biz-card .h{
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1.15;
+    color: var(--fg);
+    letter-spacing: -0.012em;
+  }
+  .biz-card .price{
+    font-family: var(--mono);
+    font-size: 30px;
+    color: var(--accent);
+  }
+  .biz-card .d{
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--dim);
+  }
+  .biz-card .who{
+    margin-top: auto;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim-2);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+  }
+
+  /* ===== Slide 12: team ===== */
+  .s-team{
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 56px;
+  }
+  .team-grid{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+    align-items: start;
+  }
+  .person{
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .person .avatar{
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+  }
+  .person .name{
+    font-size: 34px;
+    font-weight: 500;
+    color: var(--fg);
+    letter-spacing: -0.012em;
+  }
+  .person .role{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .person .bio{
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--dim);
+  }
+  .advisor-strip{
+    margin-top: 24px;
+    border-top: 1px solid var(--line);
+    padding-top: 28px;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+  .advisor-strip .lbl{
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--dim);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .advisor-strip .names{
+    font-size: 24px;
+    line-height: 1.5;
+    color: var(--fg-2);
+  }
+
+  /* ===== Slide 13: ask ===== */
+  .s-ask{
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 60px;
+  }
+  .ask-figure{
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 80px;
+    align-items: center;
+  }
+  .ask-big{
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 220px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--fg);
+  }
+  .ask-big .u{ color: var(--accent); font-size: 100px; vertical-align: top; margin-right: 8px; }
+  .ask-big .sub{
+    display: block;
+    font-family: var(--sans);
+    font-size: 34px;
+    color: var(--dim);
+    font-weight: 400;
+    margin-top: 22px;
+    letter-spacing: 0;
+  }
+  .ask-uses{
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .ask-use{
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 24px;
+    align-items: baseline;
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+  }
+  .ask-use .pct{
+    font-family: var(--mono);
+    font-size: 38px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .ask-use .lbl{
+    font-size: 28px;
+    color: var(--fg-2);
+    line-height: 1.35;
+  }
+  .ask-use .lbl strong{ color: var(--fg); font-weight: 500; }
+
+  /* ===== Slide 14: closing ===== */
+  .s-close{
+    display: grid;
+    grid-template-rows: 1fr auto;
+    align-items: center;
+  }
+  .s-close .punch-stack{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-self: center;
+  }
+  .s-close .punch-line{
+    font-family: var(--sans);
+    font-size: 88px;
+    font-weight: 500;
+    line-height: 1.08;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+    max-width: 1600px;
+    text-wrap: balance;
+  }
+  .s-close .punch-line.two{ color: var(--dim); }
+  .s-close .punch-line.three .a{ color: var(--accent); font-family: var(--mono); font-weight: 500; }
+  .s-close .footer{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-family: var(--mono);
+    font-size: 26px;
+    color: var(--dim);
+    letter-spacing: 0.04em;
+  }
+  .s-close .footer .right{ text-align: right; }
+  .s-close .footer .right .accent{ color: var(--accent); }
+
+  /* ===== image utilities (added in L2 image pass) ===== */
+  .deck-img-banner{
+    display: block;
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+    object-position: center;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+  .deck-img-quote-mark{
+    display: block;
+    max-width: 760px;
+    width: 60%;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+  .s-close{ position: relative; }
+  .s-close .hero-bg{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    z-index: 0;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .s-close > *:not(.hero-bg){ position: relative; z-index: 1; }
+
+  /* Slide 6: insert image as a row between quote and table. */
+  .s-unix{ grid-template-rows: auto auto 1fr !important; }
+
+  /* Slide 2: stack image on top of the copy column. */
+  .problem-copy{ display: flex; flex-direction: column; gap: 24px; }
+  .problem-copy .deck-img-banner{ max-height: 220px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<deck-stage width="1920" height="1080">
+
+  <!-- ===== 1. TITLE ===== -->
+  <section data-label="01 Title" class="s-title">
+    <div class="stack">
+      <div class="eyebrow">capsule · seed deck · 2026</div>
+      <h1 class="wordmark">capsule<span class="dot">.</span></h1>
+      <p class="tagline">The composable subsystem layer for AI software engineering.</p>
+    </div>
+    <div class="footer">
+      <span>$ capsule pitch --round seed<span class="blink"></span></span>
+      <span>confidential</span>
+    </div>
+  </section>
+
+  <!-- ===== 2. THE PROBLEM ===== -->
+  <section data-label="02 Problem" class="s-problem">
+    <div class="terminal">
+      <div class="bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="title-t">~/payments-platform — claude-code</span>
+      </div>
+      <div class="body-t">
+        <div><span class="prompt">user&nbsp;›</span> <span class="you">add SSO with our existing auth service.</span></div>
+        <br/>
+        <div class="out">› indexing repo… 412k LOC across 87 services</div>
+        <div class="out">› reading 1,204 files into context window…</div>
+        <div class="err">! context overflow — truncating 78%</div>
+        <div class="out">› inferring auth contract from filenames…</div>
+        <br/>
+        <div><span class="prompt">agent&nbsp;›</span> <span class="you">I created a new <span class="err">UserService</span>.</span></div>
+        <div><span class="prompt">agent&nbsp;›</span> <span class="you">Tests pass. Shipping a PR.</span></div>
+        <br/>
+        <div class="err">production: identity conflict — duplicate user table</div>
+      </div>
+    </div>
+    <div class="problem-copy">
+      <img class="deck-img-banner" src="assets/problem.png" alt="">
+      <div class="eyebrow dim">the problem</div>
+      <h2 style="margin-top:0">AI agents reason at the <span class="accent">file</span> level. Engineers reason at the <span class="accent">subsystem</span> level.</h2>
+      <p>Every coding agent in production today re-derives architecture from raw source on every task. Context windows overflow, contracts get re-invented, and integration work silently breaks.</p>
+      <p>The bottleneck isn't model capability. It's the absence of a unit AI can <em>read, compose and verify</em>.</p>
+    </div>
+    <div class="slide-tag">02 · problem</div>
+    <div class="slide-num">02 / 13</div>
+  </section>
+
+  <!-- ===== 3. THE STACK GAP ===== -->
+  <section data-label="03 Stack gap">
+    <div style="display:grid; grid-template-rows:auto 1fr; gap:56px; height:100%;">
+      <div>
+        <div class="eyebrow dim">the gap</div>
+        <h2 class="title" style="margin-top:24px">Every layer of the stack has a home. The subsystem has none.</h2>
+      </div>
+      <div class="stack-row">
+        <div class="stack-card">
+          <div class="layer">layer · code</div>
+          <div class="who">GitHub</div>
+          <div class="what">Versions and reviews source files.</div>
+          <div class="unit">unit: file / repo</div>
+        </div>
+        <div class="stack-card">
+          <div class="layer">layer · runtime</div>
+          <div class="who">Docker&nbsp;Hub</div>
+          <div class="what">Packages and ships runnable images.</div>
+          <div class="unit">unit: container</div>
+        </div>
+        <div class="stack-card">
+          <div class="layer">layer · model</div>
+          <div class="who">Hugging&nbsp;Face</div>
+          <div class="what">Distributes weights, configs and model cards.</div>
+          <div class="unit">unit: model</div>
+        </div>
+        <div class="stack-card missing">
+          <div class="layer">layer · subsystem</div>
+          <div class="who">Capsule</div>
+          <div class="what">Distributes verified, composable software subsystems agents can read.</div>
+          <div class="unit">unit: capsule</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-tag">03 · stack</div>
+    <div class="slide-num">03 / 13</div>
+  </section>
+
+  <!-- ===== 4. THE CAPSULE ===== -->
+  <section data-label="04 Capsule" class="s-def">
+    <div>
+      <div class="eyebrow">capsule</div>
+      <div class="def-callout" style="margin-top:38px">
+        <p class="lede">A <em>capsule</em> is a bounded software subsystem that is self&#8209;describing, self&#8209;verifying and addressable — small enough to fit in an agent's head, large enough to ship.</p>
+      </div>
+    </div>
+    <div class="def-row">
+      <div class="def-item">
+        <div class="n">— 01 / bounded</div>
+        <div class="k">Owns one job.</div>
+        <div class="d">A capsule maps to one engineering concern — auth, billing, search ranking — not a file, not a repo.</div>
+      </div>
+      <div class="def-item">
+        <div class="n">— 02 / composable</div>
+        <div class="k">Declares its edges.</div>
+        <div class="d">Every input and output is a typed contract. Capsules wire together through interfaces, not imports.</div>
+      </div>
+      <div class="def-item">
+        <div class="n">— 03 / self-verifying</div>
+        <div class="k">Ships its own tests.</div>
+        <div class="d">Contract tests, integration tests and agent-readable invariants travel with the capsule.</div>
+      </div>
+      <div class="def-item">
+        <div class="n">— 04 / addressable</div>
+        <div class="k">Has a URL.</div>
+        <div class="d">capsule://org/name@version — referenceable from any agent, CLI, MCP server, or chat thread.</div>
+      </div>
+    </div>
+    <div class="slide-tag">04 · definition</div>
+    <div class="slide-num">04 / 13</div>
+  </section>
+
+  <!-- ===== 5. ANATOMY ===== -->
+  <section data-label="05 Anatomy" class="s-anatomy">
+    <div class="anatomy-frame">
+      <div class="file-head">capsule.yaml — auth-ldap@0.2.1</div>
+<pre style="margin:0; font-family:inherit; font-size:inherit; line-height:1.7; color:inherit;"><span class="k">capsule</span>: wolfctf/auth-ldap
+<span class="k">version</span>: <span class="s">"0.2.1"</span>
+<span class="k">purpose</span>: <span class="s">"Identity for lab platform"</span>
+
+<span class="k">interfaces</span>:
+<span class="ind"><span class="k">provides</span>: [user.identity, session.token]
+<span class="k">requires</span>: [ldap.endpoint, kv.store]</span>
+
+<span class="k">invariants</span>:
+<span class="ind">- one user → one stable id
+- sessions expire ≤ 12h</span>
+
+<span class="k">verify</span>:
+<span class="ind">- contract: tests/contract/*
+- integration: tests/int/*</span>
+
+<span class="k">agent_brief</span>: docs/agent.md  <span class="c"># 1.8kb</span>
+<span class="k">extension_points</span>: [oauth, saml]</pre>
+    </div>
+    <div class="anatomy-copy">
+      <div class="eyebrow dim">anatomy</div>
+      <h2 style="margin-top:24px">A capsule is one folder. Six things inside.</h2>
+      <ul>
+        <li><span class="marker">01</span><span><strong>Purpose.</strong> Why it exists, in one line.</span></li>
+        <li><span class="marker">02</span><span><strong>Interfaces.</strong> What it provides and requires — typed.</span></li>
+        <li><span class="marker">03</span><span><strong>Invariants.</strong> What must stay true.</span></li>
+        <li><span class="marker">04</span><span><strong>Code.</strong> The actual implementation.</span></li>
+        <li><span class="marker">05</span><span><strong>Verification.</strong> Tests the capsule runs against itself.</span></li>
+        <li><span class="marker">06</span><span><strong>Agent brief.</strong> A compact, AI-readable handoff doc.</span></li>
+      </ul>
+    </div>
+    <div class="slide-tag">05 · anatomy</div>
+    <div class="slide-num">05 / 13</div>
+  </section>
+
+  <!-- ===== 6. UNIX ANALOGY ===== -->
+  <section data-label="06 Unix" class="s-unix">
+    <div>
+      <div class="eyebrow">a precedent</div>
+      <p class="unix-quote" style="margin-top:36px">Unix piped <span class="accent">text</span> between programs.<br/>Capsule pipes <span class="accent">context</span> between agents.</p>
+    </div>
+    <img class="deck-img-quote-mark" src="assets/unix.png" alt="">
+    <div class="unix-table">
+      <div class="head lh">unix</div>
+      <div class="head"></div>
+      <div class="head" style="color:var(--accent)">capsule</div>
+
+      <div class="lh">command</div>
+      <div class="arr">→</div>
+      <div class="rh"><span class="a">capsule</span></div>
+
+      <div class="lh">pipe&nbsp;&nbsp;|</div>
+      <div class="arr">→</div>
+      <div class="rh">contract composition</div>
+
+      <div class="lh">man page</div>
+      <div class="arr">→</div>
+      <div class="rh">agent brief</div>
+
+      <div class="lh">package manager</div>
+      <div class="arr">→</div>
+      <div class="rh">capsule registry</div>
+
+      <div class="lh">exit code</div>
+      <div class="arr">→</div>
+      <div class="rh">verification result</div>
+
+      <div class="lh">shell script</div>
+      <div class="arr">→</div>
+      <div class="rh">agent workflow</div>
+    </div>
+    <div class="slide-tag">06 · precedent</div>
+    <div class="slide-num">06 / 13</div>
+  </section>
+
+  <!-- ===== 7. HOW IT WORKS ===== -->
+  <section data-label="07 How it works" class="s-how">
+    <div>
+      <div class="eyebrow">how it works</div>
+      <h2 class="title" style="margin-top:24px">Three commands. One protocol. Any agent.</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">— STEP 01</div>
+        <div class="h">Author a capsule from any repo.</div>
+        <div class="d">Point the CLI at a directory. It infers interfaces, drafts the brief, generates contract tests, and publishes to the registry.</div>
+        <div class="term">
+<span class="p">$</span> capsule init ./services/auth
+<span class="o">› detected:&nbsp;auth-ldap</span>
+<span class="o">› inferred 2 interfaces</span>
+<span class="o">› wrote capsule.yaml</span>
+<span class="p">$</span> capsule publish
+<span class="o">→ capsule://acme/auth-ldap@0.1</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">— STEP 02</div>
+        <div class="h">Compose capsules into an agent's context.</div>
+        <div class="d">Bundle the capsules a task touches. Output is a compact, typed context pack — drops into Claude Code, Codex, Cursor, or any MCP host.</div>
+        <div class="term">
+<span class="p">$</span> capsule bundle \
+&nbsp;&nbsp;auth-ldap billing-stripe \
+&nbsp;&nbsp;lab-runtime --for claude
+<span class="o">› 6.2kb context · 0 conflicts</span>
+<span class="o">→ ready: ./bundle.capsule</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">— STEP 03</div>
+        <div class="h">Verify before merge — automatically.</div>
+        <div class="d">Agents change code; capsules check themselves. Contract drift, broken invariants and missing handoff state surface before the PR opens.</div>
+        <div class="term">
+<span class="p">$</span> capsule verify --bundle
+<span class="o">› auth-ldap&nbsp;&nbsp;&nbsp;&nbsp;✓ 42/42</span>
+<span class="o">› billing-stripe&nbsp;✓ 28/28</span>
+<span class="o">› contract drift&nbsp;<span class="h-line" style="color:var(--accent)">0</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="slide-tag">07 · product</div>
+    <div class="slide-num">07 / 13</div>
+  </section>
+
+  <!-- ===== 8. WHY NOW ===== -->
+  <section data-label="08 Why now" class="s-why">
+    <div>
+      <div class="eyebrow">why now</div>
+      <h2 class="title" style="margin-top:24px">The AI coding stack is two years old and already hitting its limit.</h2>
+    </div>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="num">76%</div>
+        <div class="h">of developers now use AI coding tools weekly.</div>
+        <div class="d">Adoption is no longer the question. Reliability on real codebases is.</div>
+      </div>
+      <div class="why-card">
+        <div class="num">200K</div>
+        <div class="h">tokens still isn't enough.</div>
+        <div class="d">A mid-sized service exceeds any context window. Truncation = hallucination at integration boundaries.</div>
+      </div>
+      <div class="why-card">
+        <div class="num">MCP</div>
+        <div class="h">solved tools. It didn't solve software.</div>
+        <div class="d">MCP gives agents hands. Capsule gives them a working mental model of the system they're touching.</div>
+      </div>
+      <div class="why-card">
+        <div class="num">∞</div>
+        <div class="h">agents, one protocol.</div>
+        <div class="d">Every coding agent is reinventing context. The market needs a neutral layer, not another vertical tool.</div>
+      </div>
+      <div class="why-card">
+        <div class="num">1st</div>
+        <div class="h">mover window is open.</div>
+        <div class="d">No incumbent owns the subsystem layer. The standard will be set in the next 18 months.</div>
+      </div>
+      <div class="why-card">
+        <div class="num">⌘</div>
+        <div class="h">enterprises are buying.</div>
+        <div class="d">Platform teams are explicitly looking for "agent-ready" infrastructure. Today there is no answer.</div>
+      </div>
+    </div>
+    <div class="slide-tag">08 · timing</div>
+    <div class="slide-num">08 / 13</div>
+  </section>
+
+  <!-- ===== 9. POSITIONING ===== -->
+  <section data-label="09 Position" class="s-market">
+    <div class="market-copy">
+      <div class="eyebrow dim">positioning</div>
+      <h2 style="margin-top:24px">A horizontal layer underneath every coding agent.</h2>
+      <p>We are not building another agent. We are building the format the agents agree on.</p>
+      <p>Cursor, Claude Code, Codex, Devin, GitHub Copilot — each one wins or loses on its access to faithful, composable engineering context. Capsule is that supply.</p>
+    </div>
+    <div class="layers">
+      <div class="layer-bar">
+        <div class="role">interface</div>
+        <div class="name">Cursor · Claude Code · Codex · Devin</div>
+      </div>
+      <div class="layer-bar">
+        <div class="role">tools</div>
+        <div class="name">MCP servers · function calling</div>
+      </div>
+      <div class="layer-bar us">
+        <div class="role">subsystems</div>
+        <div class="name">Capsule registry &amp; protocol</div>
+      </div>
+      <div class="layer-bar">
+        <div class="role">code</div>
+        <div class="name">Git · GitHub · monorepos</div>
+      </div>
+      <div class="layer-bar">
+        <div class="role">runtime</div>
+        <div class="name">Docker · Kubernetes · serverless</div>
+      </div>
+    </div>
+    <div class="slide-tag">09 · positioning</div>
+    <div class="slide-num">09 / 13</div>
+  </section>
+
+  <!-- ===== 10. TRACTION ===== -->
+  <section data-label="10 Traction" class="s-traction">
+    <div>
+      <div class="eyebrow">where we are</div>
+      <h2 class="title" style="margin-top:24px">Spec shipped. CLI in private beta. Three design partners live.</h2>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:48px;">
+      <div class="traction-grid">
+        <div class="stat">
+          <div class="v">0.3<span class="u">·spec</span></div>
+          <div class="l">protocol</div>
+          <div class="d">Open capsule spec, MIT licensed, public RFC process.</div>
+        </div>
+        <div class="stat">
+          <div class="v">12</div>
+          <div class="l">capsules in registry</div>
+          <div class="d">Seeded by us across auth, runtime, billing, search.</div>
+        </div>
+        <div class="stat">
+          <div class="v">3</div>
+          <div class="l">design partners</div>
+          <div class="d">One late-stage fintech, one infra startup, one CS dept.</div>
+        </div>
+        <div class="stat">
+          <div class="v">5</div>
+          <div class="l">agent integrations</div>
+          <div class="d">Claude Code, Codex, Cursor, GitHub Actions, custom MCP.</div>
+        </div>
+      </div>
+      <div class="pilots">
+        <div class="pilot">
+          <div class="tag">— PILOT 01</div>
+          <div class="name">Late-stage fintech</div>
+          <div class="desc">Capsule-wrapping their auth + ledger subsystems so internal agents stop re-deriving them.</div>
+        </div>
+        <div class="pilot">
+          <div class="tag">— PILOT 02</div>
+          <div class="name">Infra startup</div>
+          <div class="desc">Publishing capsules as a sales motion — drop-in agent-ready primitives.</div>
+        </div>
+        <div class="pilot">
+          <div class="tag">— PILOT 03</div>
+          <div class="name">University CS lab</div>
+          <div class="desc">Teaching distributed systems by composing capsules; coursework becomes a public registry.</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-tag">10 · traction</div>
+    <div class="slide-num">10 / 13</div>
+  </section>
+
+  <!-- ===== 11. BUSINESS MODEL ===== -->
+  <section data-label="11 Business" class="s-biz">
+    <div>
+      <div class="eyebrow">business model</div>
+      <h2 class="title" style="margin-top:24px">Open protocol below. Paid registry and verification above.</h2>
+    </div>
+    <div class="biz-grid">
+      <div class="biz-card">
+        <div class="pos">— layer 01</div>
+        <div class="h">Open spec &amp; CLI</div>
+        <div class="price">free</div>
+        <div class="d">MIT-licensed protocol, reference implementation, public registry. Wins the standards game; seeds the community.</div>
+        <div class="who">developers · open source</div>
+      </div>
+      <div class="biz-card">
+        <div class="pos">— layer 02</div>
+        <div class="h">Team registry &amp; verify</div>
+        <div class="price">$40 / dev / mo</div>
+        <div class="d">Private registry, signed capsules, CI verification, drift detection, agent context analytics across the org.</div>
+        <div class="who">platform &amp; engineering teams</div>
+      </div>
+      <div class="biz-card">
+        <div class="pos">— layer 03</div>
+        <div class="h">Enterprise &amp; on-prem</div>
+        <div class="price">$80k+ / yr</div>
+        <div class="d">VPC deployment, audit trail, SAML, capsule-level RBAC, agent-spend governance, dedicated success.</div>
+        <div class="who">regulated &amp; large eng orgs</div>
+      </div>
+    </div>
+    <div class="slide-tag">11 · business</div>
+    <div class="slide-num">11 / 13</div>
+  </section>
+
+  <!-- ===== 12. TEAM ===== -->
+  <section data-label="12 Team" class="s-team">
+    <div>
+      <div class="eyebrow">team</div>
+      <h2 class="title" style="margin-top:24px">Built by people who have shipped both protocols and large systems.</h2>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:36px;">
+      <div class="team-grid">
+        <div class="person">
+          <div class="avatar">portrait</div>
+          <div class="name">Founder · CEO</div>
+          <div class="role">protocol &amp; product</div>
+          <div class="bio">Previously: shipped a developer tool used by 100k+ engineers. Faculty appointment in systems &amp; security.</div>
+        </div>
+        <div class="person">
+          <div class="avatar">portrait</div>
+          <div class="name">Co-founder · CTO</div>
+          <div class="role">infra &amp; agents</div>
+          <div class="bio">Previously: lead engineer on agent infrastructure at a leading AI lab. Open-source maintainer.</div>
+        </div>
+        <div class="person">
+          <div class="avatar">portrait</div>
+          <div class="name">Founding designer</div>
+          <div class="role">developer experience</div>
+          <div class="bio">Previously: design lead on a category-defining devtool. Built the CLI and registry UI from day one.</div>
+        </div>
+      </div>
+      <div class="advisor-strip">
+        <div class="lbl">advisors</div>
+        <div class="names">Engineering leaders from Anthropic-era agent teams, two CTOs of public infra companies, and one of the original Unix-philosophy writers.&nbsp;<span class="dim">(detail on request)</span></div>
+      </div>
+    </div>
+    <div class="slide-tag">12 · team</div>
+    <div class="slide-num">12 / 13</div>
+  </section>
+
+  <!-- ===== 13. ASK ===== -->
+  <section data-label="13 Ask" class="s-ask">
+    <div>
+      <div class="eyebrow">the ask</div>
+      <h2 class="title" style="margin-top:24px">Raising a $3.5M seed to set the standard before someone else does.</h2>
+    </div>
+    <div class="ask-figure">
+      <div class="ask-big">
+        <span class="u">$</span>3.5M
+        <span class="sub">Seed round · 18-month runway · led + co-led structure preferred.</span>
+      </div>
+      <div class="ask-uses">
+        <div class="ask-use">
+          <div class="pct">45%</div>
+          <div class="lbl"><strong>Protocol &amp; registry engineering.</strong> Spec v1.0, scale the hosted registry, harden verification.</div>
+        </div>
+        <div class="ask-use">
+          <div class="pct">30%</div>
+          <div class="lbl"><strong>Agent integrations &amp; DX.</strong> First-class support across every major coding agent.</div>
+        </div>
+        <div class="ask-use">
+          <div class="pct">15%</div>
+          <div class="lbl"><strong>Design-partner success.</strong> Convert 3 pilots into 10 paying teams.</div>
+        </div>
+        <div class="ask-use">
+          <div class="pct">10%</div>
+          <div class="lbl"><strong>Community &amp; standards.</strong> RFC process, public capsules, conference presence.</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-tag">13 · ask</div>
+    <div class="slide-num">13 / 13</div>
+  </section>
+
+  <!-- ===== 14. CLOSING ===== -->
+  <section data-label="14 Closing" class="s-close">
+    <img class="hero-bg" src="assets/closing.png" alt="">
+    <div class="punch-stack">
+      <p class="punch-line one">Every layer of the AI software stack has a winner.</p>
+      <p class="punch-line two">The subsystem layer is still empty.</p>
+      <p class="punch-line three"><span class="a">capsule</span> intends to fill it.</p>
+    </div>
+    <div class="footer">
+      <span>$ capsule contact --founder</span>
+      <span class="right">founders@capsule.dev&nbsp;&nbsp;<span class="accent">·</span>&nbsp;&nbsp;capsule.dev</span>
+    </div>
+  </section>
+
+</deck-stage>
+</body>
+</html>

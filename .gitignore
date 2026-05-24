@@ -21,3 +21,6 @@ htmlcov/
 idea.txt
 unix.txt
 
+# Scratch dir for the design-handoff tarball — never commit.
+.design/
+
