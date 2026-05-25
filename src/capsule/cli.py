@@ -22,6 +22,7 @@ from capsule.client import (
     pull as pull_capsule,
 )
 from capsule.aigen import AIGenError, generate_tests
+from capsule.push import PushError, push as push_capsule
 from capsule.diff import (
     diff as compute_diff,
     render_markdown as diff_markdown,
@@ -440,6 +441,52 @@ def diff_command(
     else:
         sys.stdout.write(rendered)
     raise typer.Exit(code=0 if d.empty else 0)  # diff is informational, not a check
+
+
+# ---------------------------------------------------------------------------
+# push
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def push(
+    directory: Path = typer.Argument(
+        Path("."),
+        help="Directory containing capsule.yaml (default: current dir).",
+    ),
+    git_url: Optional[str] = typer.Option(
+        None, "--git-url", help="Override the inferred github.com URL."
+    ),
+    ref: Optional[str] = typer.Option(
+        None, "--ref", help="Override the inferred git ref (branch/tag/sha)."
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", help="Override CAPSULE_TOKEN / `gh auth token`."
+    ),
+) -> None:
+    """Publish a capsule to the registry.
+
+    Auth is the existing `gh` CLI's token (or CAPSULE_TOKEN env var, or
+    --token). The server validates the token against api.github.com/user
+    and only accepts pushes whose owner matches the GitHub username.
+    """
+    try:
+        lc = load(directory)
+    except CapsuleLoadError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        result = push_capsule(lc, git_url=git_url, ref=ref, token=token)
+    except PushError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[green]pushed[/green] {result.address}\n"
+        f"  source: {result.git_url}@{result.ref}  {result.path}\n"
+        f"  view:   {result.view_url}"
+    )
 
 
 # ---------------------------------------------------------------------------

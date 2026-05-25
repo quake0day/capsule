@@ -4,11 +4,13 @@
 // with name + version + a one-line excerpt of its purpose. Click-through
 // goes to /c/<owner>/<name>.
 
-import type { PagesFunction } from "@cloudflare/workers-types";
+import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
-import { uniqueLatest } from "./_lib/registry";
+import { uniqueLatestWithKV } from "./_lib/registry";
 import { fetchCapsule } from "./_lib/github";
 import { layout } from "./_lib/render";
+
+interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
 const html = (body: string, status = 200): Response =>
   new Response(body, {
@@ -29,7 +31,7 @@ interface IndexCard {
   type: string;
 }
 
-async function buildCard(entry: ReturnType<typeof uniqueLatest>[number]): Promise<IndexCard> {
+async function buildCard(entry: Awaited<ReturnType<typeof uniqueLatestWithKV>>[number]): Promise<IndexCard> {
   try {
     const { capsule } = await fetchCapsule(entry);
     const firstLine = (capsule.purpose?.summary ?? "").trim().split(/\r?\n/)[0] ?? "";
@@ -51,8 +53,8 @@ async function buildCard(entry: ReturnType<typeof uniqueLatest>[number]): Promis
   }
 }
 
-export const onRequestGet: PagesFunction = async () => {
-  const entries = uniqueLatest();
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  const entries = await uniqueLatestWithKV(env.CAPSULE_REGISTRY);
   const cards = await Promise.all(entries.map(buildCard));
 
   const list = cards.map((c) => `

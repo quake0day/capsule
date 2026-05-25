@@ -21,15 +21,17 @@
 //     -H "content-type: application/json" \
 //     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-import type { PagesFunction } from "@cloudflare/workers-types";
+import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
 import {
   parseAddress,
-  resolve,
-  uniqueLatest,
+  resolveWithKV,
+  uniqueLatestWithKV,
   type RegistryEntry,
 } from "./_lib/registry";
 import { fetchCapsule, rawUrl, CapsuleFetchError } from "./_lib/github";
+
+interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "capsule-registry";
@@ -70,7 +72,7 @@ const rpcResult = (id: number | string | null | undefined, result: unknown) =>
 // HTTP entry points
 // ---------------------------------------------------------------------------
 
-export const onRequestPost: PagesFunction = async ({ request }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let body: JsonRpcRequest;
   try {
     body = (await request.json()) as JsonRpcRequest;
@@ -82,13 +84,13 @@ export const onRequestPost: PagesFunction = async ({ request }) => {
   }
 
   try {
-    return await dispatch(body);
+    return await dispatch(body, env.CAPSULE_REGISTRY);
   } catch (err) {
     return rpcError(body.id, -32603, `Internal error: ${(err as Error).message}`);
   }
 };
 
-export const onRequestGet: PagesFunction = async () =>
+export const onRequestGet: PagesFunction<Env> = async () =>
   jsonResponse({
     server: SERVER_NAME,
     version: SERVER_VERSION,
@@ -102,7 +104,10 @@ export const onRequestGet: PagesFunction = async () =>
 // dispatch
 // ---------------------------------------------------------------------------
 
-async function dispatch(req: JsonRpcRequest): Promise<Response> {
+async function dispatch(
+  req: JsonRpcRequest,
+  kv: KVNamespace | undefined,
+): Promise<Response> {
   switch (req.method) {
     case "initialize":
       return rpcResult(req.id, {
@@ -123,13 +128,13 @@ async function dispatch(req: JsonRpcRequest): Promise<Response> {
       return rpcResult(req.id, { tools: TOOL_DESCRIPTORS });
 
     case "tools/call":
-      return await callTool(req);
+      return await callTool(req, kv);
 
     case "resources/list":
-      return rpcResult(req.id, { resources: listResources() });
+      return rpcResult(req.id, { resources: await listResources(kv) });
 
     case "resources/read":
-      return await readResource(req);
+      return await readResource(req, kv);
 
     case "ping":
       return rpcResult(req.id, {});
@@ -181,7 +186,7 @@ const TOOL_DESCRIPTORS = [
 ];
 
 
-async function callTool(req: JsonRpcRequest): Promise<Response> {
+async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined): Promise<Response> {
   const params = (req.params || {}) as { name?: string; arguments?: Record<string, unknown> };
   const name = params.name;
   const args = params.arguments || {};
@@ -190,7 +195,7 @@ async function callTool(req: JsonRpcRequest): Promise<Response> {
     const addr = String(args.address || "");
     const parsed = parseAddress(addr);
     if (!parsed) return toolError(req.id, `invalid address: ${addr}`);
-    const entry = resolve(parsed);
+    const entry = await resolveWithKV(parsed, kv);
     if (!entry) return toolError(req.id, `no capsule in registry for ${addr}`);
     return toolResult(req.id, JSON.stringify(
       {
@@ -211,7 +216,7 @@ async function callTool(req: JsonRpcRequest): Promise<Response> {
     const addr = String(args.address || "");
     const parsed = parseAddress(addr);
     if (!parsed) return toolError(req.id, `invalid address: ${addr}`);
-    const entry = resolve(parsed);
+    const entry = await resolveWithKV(parsed, kv);
     if (!entry) return toolError(req.id, `no capsule in registry for ${addr}`);
     try {
       const { capsule, source_url } = await fetchCapsule(entry);
@@ -223,7 +228,8 @@ async function callTool(req: JsonRpcRequest): Promise<Response> {
   }
 
   if (name === "capsule_list") {
-    const items = uniqueLatest().map((e) => ({
+    const entries = await uniqueLatestWithKV(kv);
+    const items = entries.map((e) => ({
       address: `capsule://${e.owner}/${e.name}@${e.version}`,
       owner: e.owner,
       name: e.name,
@@ -255,8 +261,9 @@ function toolError(id: JsonRpcRequest["id"], text: string): Response {
 // resources
 // ---------------------------------------------------------------------------
 
-function listResources() {
-  return uniqueLatest().map((e: RegistryEntry) => ({
+async function listResources(kv: KVNamespace | undefined) {
+  const entries = await uniqueLatestWithKV(kv);
+  return entries.map((e: RegistryEntry) => ({
     uri: `capsule://${e.owner}/${e.name}@${e.version}`,
     name: `${e.owner}/${e.name}@${e.version}`,
     description: `Capsule manifest (capsule.yaml) for ${e.owner}/${e.name} at version ${e.version}.`,
@@ -265,14 +272,14 @@ function listResources() {
 }
 
 
-async function readResource(req: JsonRpcRequest): Promise<Response> {
+async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): Promise<Response> {
   const params = (req.params || {}) as { uri?: string };
   const uri = String(params.uri || "");
   const parsed = parseAddress(uri);
   if (!parsed) {
     return rpcError(req.id, -32602, `invalid resource URI: ${uri}`);
   }
-  const entry = resolve(parsed);
+  const entry = await resolveWithKV(parsed, kv);
   if (!entry) {
     return rpcError(req.id, -32602, `unknown resource: ${uri}`);
   }

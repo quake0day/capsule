@@ -4,12 +4,14 @@
 // cards, the bundled handoff block, and the joined avoid/invariants list.
 // Server-rendered HTML; the only client JS is the Mermaid CDN script.
 
-import type { PagesFunction } from "@cloudflare/workers-types";
+import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
-import { parseAddress, resolve, type RegistryEntry } from "./_lib/registry";
+import { parseAddress, resolveWithKV, type RegistryEntry } from "./_lib/registry";
 import { fetchCapsule, CapsuleFetchError } from "./_lib/github";
 import { layout } from "./_lib/render";
 import type { Capsule } from "./_lib/schema";
+
+interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
 const html = (body: string, status = 200): Response =>
   new Response(body, {
@@ -33,7 +35,7 @@ const errorPage = (title: string, message: string, status: number): Response =>
     status,
   );
 
-export const onRequestGet: PagesFunction = async ({ request }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const raw = url.searchParams.get("c") || url.searchParams.get("capsules") || "";
   if (!raw) {
@@ -68,7 +70,7 @@ export const onRequestGet: PagesFunction = async ({ request }) => {
       failed.push({ slug, error: "invalid address" });
       continue;
     }
-    const entry = resolve(addr);
+    const entry = await resolveWithKV(addr, env.CAPSULE_REGISTRY);
     if (!entry) {
       failed.push({ slug, error: "not in registry" });
       continue;

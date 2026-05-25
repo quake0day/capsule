@@ -4,10 +4,12 @@
 // The pure naming layer: do not fetch the capsule itself, just translate a
 // `capsule://` address into a concrete git source. Cheap, cacheable.
 
-import type { PagesFunction } from "@cloudflare/workers-types";
+import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
-import { parseAddress, resolve } from "../../../_lib/registry";
+import { parseAddress, resolveWithKV } from "../../../_lib/registry";
 import { rawUrl } from "../../../_lib/github";
+
+interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body, null, 2), {
@@ -20,7 +22,7 @@ const joinSlug = (slug: string | string[] | undefined): string => {
   return Array.isArray(slug) ? slug.join("/") : slug;
 };
 
-export const onRequestGet: PagesFunction = async ({ params }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ params, env }) => {
   const slug = joinSlug(params.slug);
   if (!slug) return json({ error: "missing slug" }, 400);
 
@@ -32,7 +34,7 @@ export const onRequestGet: PagesFunction = async ({ params }) => {
     );
   }
 
-  const entry = resolve(addr);
+  const entry = await resolveWithKV(addr, env.CAPSULE_REGISTRY);
   if (!entry) {
     const v = addr.version ? "@" + addr.version : "";
     return json({ error: `no capsule found for ${addr.owner}/${addr.name}${v}` }, 404);

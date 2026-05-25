@@ -2,12 +2,14 @@
 // Also accepts /c/_/<name> as a placeholder for cross-capsule links where
 // the owner isn't known — falls back to "first match" in the registry.
 
-import type { PagesFunction } from "@cloudflare/workers-types";
+import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
-import { parseAddress, resolve, allEntries } from "../_lib/registry";
+import { parseAddress, resolveWithKV, allEntriesWithKV } from "../_lib/registry";
 import type { RegistryEntry } from "../_lib/registry";
 import { fetchCapsule, CapsuleFetchError } from "../_lib/github";
 import { renderCapsule, layout } from "../_lib/render";
+
+interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
 const html = (body: string, status = 200): Response =>
   new Response(body, {
@@ -34,7 +36,7 @@ const escape = (s: string): string =>
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c] as string));
 
-export const onRequestGet: PagesFunction = async ({ params }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ params, env }) => {
   const slug = joinSlug(params.slug);
   if (!slug) return errorPage("Bad request", "Missing capsule address.", 400);
 
@@ -44,7 +46,8 @@ export const onRequestGet: PagesFunction = async ({ params }) => {
   if (!addr && slug.startsWith("_/")) {
     const bareName = slug.slice(2).split("@")[0];
     const versionPart = slug.includes("@") ? slug.split("@")[1] : undefined;
-    const candidate = allEntries().find((e: RegistryEntry) => e.name === bareName);
+    const entries = await allEntriesWithKV(env.CAPSULE_REGISTRY);
+    const candidate = entries.find((e: RegistryEntry) => e.name === bareName);
     if (candidate) {
       addr = { owner: candidate.owner, name: bareName, version: versionPart };
     }
@@ -58,7 +61,7 @@ export const onRequestGet: PagesFunction = async ({ params }) => {
     );
   }
 
-  const entry = resolve(addr);
+  const entry = await resolveWithKV(addr, env.CAPSULE_REGISTRY);
   if (!entry) {
     const v = addr.version ? "@" + addr.version : "";
     return errorPage(
