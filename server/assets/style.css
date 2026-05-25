@@ -148,3 +148,81 @@ a:hover { border-bottom-color: var(--accent); }
 
 /* Error page */
 .error h1 { font-size: 22px; color: var(--warn-ink); }
+
+/* Composition view (L3) */
+.compose { max-width: 980px; margin: 0 auto; padding: 36px 24px 80px; }
+.compose h1 { font-size: 22px; margin-bottom: 8px; }
+.compose h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-3); margin: 28px 0 12px; border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+}
+.compose .lede { color: var(--ink-2); margin-bottom: 24px; font-size: 14px; }
+.compose .lede code { word-break: break-word; }
+
+.compose .topology pre.mermaid {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  margin: 0;
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-x: auto;
+}
+
+.compose .card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+.compose .card-grid .capsule-card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fff;
+  color: var(--ink);
+}
+.compose .card-grid .capsule-card:hover { background: var(--code-bg); }
+.compose .card-grid .capsule-card .name { font-weight: 600; font-size: 14px; }
+.compose .card-grid .capsule-card .name .version { color: var(--ink-3); font-weight: 400; }
+.compose .card-grid .capsule-card .name .badge {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  background: var(--accent-bg); color: var(--accent); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.05em; margin-left: 4px;
+}
+.compose .card-grid .capsule-card .summary { color: var(--ink-3); font-size: 13px; margin: 6px 0 4px; }
+.compose .card-grid .capsule-card .meta-line { color: var(--ink-3); font-size: 12px; }
+
+.compose .handoff-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid #5c4dab;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background: #f6f4fb;
+}
+.compose .handoff-card header { display: flex; gap: 8px; align-items: baseline; }
+.compose .handoff-card .objective { margin: 6px 0 8px; font-size: 14px; color: var(--ink-2); }
+.compose .handoff-card details { font-size: 13px; color: var(--ink-2); margin: 4px 0; }
+.compose .handoff-card summary { cursor: pointer; color: var(--ink); }
+.compose .handoff-card ul { margin: 6px 0 0 0; }
+
+.compose .invariants ul { padding-left: 20px; }
+.compose .invariants li { font-size: 13px; color: var(--ink-2); margin: 4px 0; }
+.compose .invariants code.hint { font-size: 11px; }
+
+.compose .failed {
+  border: 1px solid var(--warn-ink);
+  background: var(--warn-bg);
+  border-radius: 6px;
+  padding: 10px 16px;
+}
+.compose .failed h2 { color: var(--warn-ink); border: none; margin: 0 0 6px; }
+.compose .failed ul { margin: 0; }
+
+.hint-mint { color: var(--accent); }
+
