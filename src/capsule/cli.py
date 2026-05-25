@@ -23,6 +23,7 @@ from capsule.client import (
 )
 from capsule.aigen import AIGenError, generate_tests
 from capsule.push import PushError, push as push_capsule
+from capsule.reconstruct import ReconstructError, reconstruct as reconstruct_capsules
 from capsule.diff import (
     diff as compute_diff,
     render_markdown as diff_markdown,
@@ -526,6 +527,122 @@ def generate_tests_command(
         f"  {result.invariant_count} invariant(s) → {result.bytes_written} bytes  "
         f"(model={result.model})"
     )
+
+
+# ---------------------------------------------------------------------------
+# reconstruct
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def reconstruct(
+    from_dir: Path = typer.Option(
+        ...,
+        "--from",
+        "-f",
+        help="Directory containing code-bundled capsules (capsule.yaml + install.json + src/).",
+    ),
+    out: Path = typer.Option(
+        ...,
+        "--out",
+        "-o",
+        help="Destination directory for the reconstructed site.",
+    ),
+    data: Optional[Path] = typer.Option(
+        None,
+        "--data",
+        help="JSON file injected into capsules that declare data_injections (e.g. content-store).",
+    ),
+    project_name: Optional[str] = typer.Option(
+        None, "--project-name", help="Template var for wrangler.toml etc."
+    ),
+    kv_id: Optional[str] = typer.Option(
+        None, "--kv-id", help="Cloudflare KV namespace id for the YL_DATA binding."
+    ),
+    r2_bucket: Optional[str] = typer.Option(
+        None, "--r2-bucket", help="Cloudflare R2 bucket name for the YL_IMAGES binding."
+    ),
+    clean: bool = typer.Option(
+        False, "--clean", help="Wipe the output directory before assembling."
+    ),
+    prompt: Optional[str] = typer.Option(
+        None, "--prompt",
+        help="Optional AI customization prompt (requires ANTHROPIC_API_KEY).",
+    ),
+) -> None:
+    """Assemble a runnable system from code-bundled capsules.
+
+    Each capsule must contain capsule.yaml + install.json + src/. The
+    install.json drives the file mapping and any data injections /
+    template substitutions. With --data, content capsules get their
+    DEFAULT_DATA filled in. With --prompt, the assembled output is
+    then handed to Claude for natural-language customization.
+    """
+    data_value: dict | None = None
+    if data:
+        try:
+            data_value = json.loads(data.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            err_console.print(f"[red]could not read {data}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+    template_args: dict[str, str] = {}
+    if project_name:
+        template_args["project-name"] = project_name
+    if kv_id:
+        template_args["kv-id"] = kv_id
+    if r2_bucket:
+        template_args["r2-bucket"] = r2_bucket
+
+    try:
+        result = reconstruct_capsules(
+            from_dir, out,
+            data=data_value,
+            template_args=template_args,
+            clean=clean,
+        )
+    except ReconstructError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[green]reconstructed[/green] {result.files_written} files from "
+        f"{len(result.capsules)} capsules → {result.out}"
+    )
+    for c in result.capsules:
+        console.print(f"  ✓ {c}")
+    for w in result.warnings:
+        console.print(f"  [yellow]warn[/yellow]: {w}")
+    if result.env_required:
+        console.print(
+            f"\n[bold]Set these env vars on Cloudflare Pages before deploying:[/bold]"
+        )
+        for env in result.env_required:
+            console.print(f"  - {env}")
+
+    if prompt:
+        try:
+            from capsule.aigen_recon import customize, AIGenError as _ARErr
+        except ImportError as exc:
+            err_console.print(f"[red]AI mode unavailable: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"\n[bold cyan]applying prompt customization via Claude…[/bold cyan]\n  prompt: {prompt}"
+        )
+        try:
+            patches = customize(
+                capsules_dir=from_dir,
+                out_dir=result.out,
+                data=data_value,
+                prompt=prompt,
+            )
+        except _ARErr as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"[green]applied[/green] {len(patches)} patch(es) from Claude.\n"
+            f"  files touched: {sorted({p.path for p in patches})}"
+        )
 
 
 # ---------------------------------------------------------------------------
