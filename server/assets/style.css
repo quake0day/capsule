@@ -226,3 +226,59 @@ a:hover { border-bottom-color: var(--accent); }
 
 .hint-mint { color: var(--accent); }
 
+/* Source-files section on the man page */
+.source-files ul.files {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.source-files ul.files li {
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.source-files ul.files li:hover { background: var(--code-bg); }
+.source-files.empty { color: var(--ink-3); }
+.source-files .hint code { font-size: 12px; }
+
+/* Per-file blob view (/c/<o>/<n>/blob/<path>) */
+.blob {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+.blob .crumbs {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+.blob .crumbs a { color: var(--ink-3); border-bottom-color: transparent; }
+.blob .crumbs a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.blob h1 {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 18px;
+  margin: 0 0 8px;
+  word-break: break-all;
+}
+.blob .meta-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 16px;
+  font-size: 12px;
+}
+.blob pre {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  background: #fbfbf7;
+}
+.blob pre code { background: none; padding: 0; font-size: 13px; }
+
+

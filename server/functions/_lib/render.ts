@@ -45,10 +45,21 @@ ${main}
 </html>`;
 }
 
+/** Options for renderCapsule. */
+export interface RenderCapsuleOpts {
+  /** Source files declared in install.json (relative paths inside the capsule dir). */
+  files?: Array<{ from: string; to: string }>;
+}
+
 /** Render the man page for a single capsule. */
-export function renderCapsule(entry: RegistryEntry, capsule: Capsule): string {
+export function renderCapsule(
+  entry: RegistryEntry,
+  capsule: Capsule,
+  opts: RenderCapsuleOpts = {},
+): string {
   const addr = `capsule://${h(entry.owner)}/${h(entry.name)}@${h(entry.version)}`;
   const sourceLink = entry.git_url + (entry.git_url.endsWith("/") ? "" : "/") + "blob/" + entry.ref + "/" + entry.path;
+  const files = opts.files ?? [];
 
   return `
 <main class="manpage">
@@ -73,8 +84,10 @@ export function renderCapsule(entry: RegistryEntry, capsule: Capsule): string {
   ${handoff(capsule.handoff)}
   ${glossary(capsule.agent?.glossary)}
 
+  ${renderSourceFiles(entry, files)}
+
   <section class="meta">
-    <h2>Source</h2>
+    <h2>Upstream source</h2>
     <p><a href="${h(sourceLink)}">${h(sourceLink)}</a></p>
     <p class="hint">Pull this capsule locally:</p>
     <pre><code>capsule pull ${addr}</code></pre>
@@ -82,6 +95,89 @@ export function renderCapsule(entry: RegistryEntry, capsule: Capsule): string {
     <pre><code>capsule man ${addr}</code></pre>
   </section>
 </main>`;
+}
+
+
+/** Source-files list shown on the man page when install.json was available. */
+function renderSourceFiles(
+  entry: RegistryEntry,
+  files: Array<{ from: string; to: string }>,
+): string {
+  if (files.length === 0) {
+    return `
+  <section class="source-files empty">
+    <h2>Source files</h2>
+    <p class="hint">This capsule has no <code>install.json</code> — it is a
+    descriptor-only capsule (no code bundled). Source files appear here
+    automatically once a capsule ships an install plan.</p>
+  </section>`;
+  }
+  const baseHref = `/c/${h(entry.owner)}/${h(entry.name)}@${h(entry.version)}/blob`;
+  const rows = files.map((f) => {
+    const safe = h(f.from);
+    return `<li><a href="${baseHref}/${safe}"><code>${safe}</code></a>
+            <span class="hint">→ <code>${h(f.to)}</code></span></li>`;
+  }).join("\n      ");
+  return `
+  <section class="source-files">
+    <h2>Source files <span class="hint">(${files.length})</span></h2>
+    <p class="hint">Click any file to view its content; the path on the right
+    shows where the file lands when this capsule is installed.</p>
+    <ul class="files">
+      ${rows}
+    </ul>
+    <p class="hint" style="margin-top:14px">
+      Plus <a href="${baseHref}/capsule.yaml"><code>capsule.yaml</code></a> and
+      <a href="${baseHref}/install.json"><code>install.json</code></a>.
+    </p>
+  </section>`;
+}
+
+
+/** Per-file source view at /c/<owner>/<name>[@v]/blob/<path>. */
+export function renderFile(
+  entry: RegistryEntry,
+  filePath: string,
+  content: string,
+  upstreamUrl: string,
+): string {
+  const addr = `capsule://${h(entry.owner)}/${h(entry.name)}@${h(entry.version)}`;
+  const backHref = `/c/${h(entry.owner)}/${h(entry.name)}@${h(entry.version)}`;
+  const lang = languageFromPath(filePath);
+  const bytes = new TextEncoder().encode(content).length;
+  const lines = content.split(/\r?\n/).length;
+  return `
+<main class="blob">
+  <nav class="crumbs">
+    <a href="/">registry</a> ›
+    <a href="${backHref}">${h(entry.owner)}/${h(entry.name)}@${h(entry.version)}</a> ›
+    <span>${h(filePath)}</span>
+  </nav>
+  <h1>${h(filePath)}</h1>
+  <p class="meta-line">
+    <span class="hint">${bytes.toLocaleString()} bytes · ${lines.toLocaleString()} lines · <code>${addr}</code></span>
+    <span class="links"><a href="${h(upstreamUrl)}">raw on github</a></span>
+  </p>
+  <pre><code class="language-${h(lang)}">${h(content)}</code></pre>
+</main>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/atom-one-light.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>`;
+}
+
+
+function languageFromPath(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
+  if (lower.endsWith(".js") || lower.endsWith(".mjs")) return "javascript";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  if (lower.endsWith(".css")) return "css";
+  if (lower.endsWith(".toml")) return "toml";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".py")) return "python";
+  return "plaintext";
 }
 
 function section(title: string, items: string[] | undefined, cls = ""): string {

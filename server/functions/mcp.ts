@@ -29,7 +29,13 @@ import {
   uniqueLatestWithKV,
   type RegistryEntry,
 } from "./_lib/registry";
-import { fetchCapsule, rawUrl, CapsuleFetchError } from "./_lib/github";
+import {
+  fetchCapsule,
+  fetchInstall,
+  fetchSibling,
+  rawUrl,
+  CapsuleFetchError,
+} from "./_lib/github";
 
 interface Env { CAPSULE_REGISTRY?: KVNamespace }
 
@@ -261,20 +267,87 @@ function toolError(id: JsonRpcRequest["id"], text: string): Response {
 // resources
 // ---------------------------------------------------------------------------
 
+/** Splits `capsule://owner/name@v/files/<rest>` into (addr-slug, file-path).
+ *  Returns null if the URI is not a file URI. */
+function splitFileUri(uri: string): { addrSlug: string; filePath: string } | null {
+  const cleaned = uri.replace(/^capsule:\/\//, "");
+  const idx = cleaned.indexOf("/files/");
+  if (idx === -1) return null;
+  return {
+    addrSlug: cleaned.slice(0, idx),
+    filePath: cleaned.slice(idx + "/files/".length),
+  };
+}
+
+
 async function listResources(kv: KVNamespace | undefined) {
   const entries = await uniqueLatestWithKV(kv);
-  return entries.map((e: RegistryEntry) => ({
-    uri: `capsule://${e.owner}/${e.name}@${e.version}`,
-    name: `${e.owner}/${e.name}@${e.version}`,
-    description: `Capsule manifest (capsule.yaml) for ${e.owner}/${e.name} at version ${e.version}.`,
-    mimeType: "application/yaml",
+  const out: Array<{ uri: string; name: string; description: string; mimeType: string }> = [];
+
+  // Each capsule contributes one "manifest" resource plus one resource per
+  // declared file (capsule.yaml + install.json + every install.json files[]).
+  // We fetch install.json in parallel for snappier listing.
+  await Promise.all(entries.map(async (e: RegistryEntry) => {
+    const baseAddr = `capsule://${e.owner}/${e.name}@${e.version}`;
+    out.push({
+      uri: baseAddr,
+      name: `${e.owner}/${e.name}@${e.version} · manifest`,
+      description: `Top-level capsule.yaml for ${e.owner}/${e.name} at version ${e.version}.`,
+      mimeType: "application/yaml",
+    });
+
+    let install;
+    try {
+      install = await fetchInstall(e);
+    } catch {
+      install = null;
+    }
+    if (!install) return;
+
+    out.push({
+      uri: `${baseAddr}/files/install.json`,
+      name: `${e.owner}/${e.name}@${e.version} · install.json`,
+      description: "Install plan: file mapping + data injections + env requirements.",
+      mimeType: "application/json",
+    });
+
+    for (const f of install.install.files) {
+      out.push({
+        uri: `${baseAddr}/files/${f.from}`,
+        name: `${e.owner}/${e.name}@${e.version} · ${f.from}`,
+        description: `Source file. Installs to '${f.to}' in the reconstructed site.`,
+        mimeType: guessMime(f.from),
+      });
+    }
   }));
+
+  return out;
+}
+
+
+function guessMime(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "application/yaml";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
+  if (lower.endsWith(".css")) return "text/css";
+  if (lower.endsWith(".js") || lower.endsWith(".mjs")) return "application/javascript";
+  if (lower.endsWith(".ts")) return "application/typescript";
+  return "text/plain";
 }
 
 
 async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): Promise<Response> {
   const params = (req.params || {}) as { uri?: string };
   const uri = String(params.uri || "");
+
+  // File URI?
+  const fileUri = splitFileUri(uri);
+  if (fileUri) {
+    return await readFileResource(req, kv, fileUri.addrSlug, fileUri.filePath);
+  }
+
+  // Otherwise plain capsule manifest URI.
   const parsed = parseAddress(uri);
   if (!parsed) {
     return rpcError(req.id, -32602, `invalid resource URI: ${uri}`);
@@ -286,19 +359,60 @@ async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): P
   try {
     const { raw } = await fetchCapsule(entry);
     return rpcResult(req.id, {
-      contents: [
-        {
-          uri: `capsule://${entry.owner}/${entry.name}@${entry.version}`,
-          mimeType: "application/yaml",
-          text: raw,
-        },
-      ],
+      contents: [{
+        uri: `capsule://${entry.owner}/${entry.name}@${entry.version}`,
+        mimeType: "application/yaml",
+        text: raw,
+      }],
     });
   } catch (err) {
-    return rpcError(
-      req.id,
-      -32603,
-      `resource fetch failed: ${(err as Error).message}`,
-    );
+    return rpcError(req.id, -32603, `resource fetch failed: ${(err as Error).message}`);
+  }
+}
+
+
+async function readFileResource(
+  req: JsonRpcRequest,
+  kv: KVNamespace | undefined,
+  addrSlug: string,
+  filePath: string,
+): Promise<Response> {
+  const addr = parseAddress(addrSlug);
+  if (!addr) return rpcError(req.id, -32602, `invalid file URI: ${addrSlug}/files/${filePath}`);
+  if (filePath.includes("..")) return rpcError(req.id, -32602, `bad file path: ${filePath}`);
+
+  const entry = await resolveWithKV(addr, kv);
+  if (!entry) return rpcError(req.id, -32602, `unknown capsule: ${addrSlug}`);
+
+  // Allow capsule.yaml + install.json + any file declared by install.json.
+  try {
+    let text: string;
+    let mime: string;
+    if (filePath === "capsule.yaml") {
+      text = (await fetchCapsule(entry)).raw;
+      mime = "application/yaml";
+    } else if (filePath === "install.json") {
+      const install = await fetchInstall(entry);
+      if (!install) return rpcError(req.id, -32602, `no install.json for ${addrSlug}`);
+      text = JSON.stringify(install.install, null, 2);
+      mime = "application/json";
+    } else {
+      const install = await fetchInstall(entry);
+      const declared = install?.install.files.some((f) => f.from === filePath) ?? false;
+      if (!declared) return rpcError(req.id, -32602, `${filePath} not declared in install.json`);
+      const result = await fetchSibling(entry, filePath);
+      if (!result) return rpcError(req.id, -32602, `${filePath}: 404 upstream`);
+      text = result.text;
+      mime = guessMime(filePath);
+    }
+    return rpcResult(req.id, {
+      contents: [{
+        uri: `capsule://${entry.owner}/${entry.name}@${entry.version}/files/${filePath}`,
+        mimeType: mime,
+        text,
+      }],
+    });
+  } catch (err) {
+    return rpcError(req.id, -32603, `file fetch failed: ${(err as Error).message}`);
   }
 }
