@@ -21,6 +21,13 @@ from capsule.client import (
     parse_address,
     pull as pull_capsule,
 )
+from capsule.aigen import AIGenError, generate_tests
+from capsule.diff import (
+    diff as compute_diff,
+    render_markdown as diff_markdown,
+    render_text as diff_text,
+    to_json_dict as diff_json,
+)
 from capsule.compose import compose as compose_capsules
 from capsule.compose import topo_order
 from capsule.graph import render_dot, render_text
@@ -379,6 +386,99 @@ def status(
         print(json.dumps(to_json_dict(report), indent=2))
     else:
         print_status(report, console)
+
+
+# ---------------------------------------------------------------------------
+# diff
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="diff")
+def diff_command(
+    a: str = typer.Argument(..., help="First capsule (address or path)."),
+    b: str = typer.Argument(..., help="Second capsule (address or path)."),
+    fmt: str = typer.Option(
+        "text",
+        "--format",
+        "-f",
+        help="text | markdown | json",
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Write to file instead of stdout."
+    ),
+) -> None:
+    """Show what changed between two capsule versions.
+
+    Compares handoff, invariants, contracts and dependencies — the things
+    that change an agent's understanding of the subsystem. Not a code diff;
+    use `git diff` for that.
+    """
+    try:
+        lc_a = _load_one(a)
+        lc_b = _load_one(b)
+    except (CapsuleClientError, CapsuleLoadError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    d = compute_diff(lc_a.capsule, lc_b.capsule)
+
+    if fmt == "text":
+        rendered = diff_text(d)
+    elif fmt == "markdown":
+        rendered = diff_markdown(d)
+    elif fmt == "json":
+        rendered = json.dumps(diff_json(d), indent=2) + "\n"
+    else:
+        err_console.print(f"[red]unknown format '{fmt}'. Use text | markdown | json.[/red]")
+        raise typer.Exit(code=2)
+
+    if output:
+        output.write_text(rendered, encoding="utf-8")
+        console.print(
+            f"[green]wrote[/green] {output} ({len(rendered)} chars, format={fmt})"
+        )
+    else:
+        sys.stdout.write(rendered)
+    raise typer.Exit(code=0 if d.empty else 0)  # diff is informational, not a check
+
+
+# ---------------------------------------------------------------------------
+# generate-tests
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="generate-tests")
+def generate_tests_command(
+    target: str = typer.Argument(..., help="capsule://<owner>/<name>[@<v>] or local path"),
+    model: str = typer.Option(
+        "claude-haiku-4-5-20251001",
+        "--model",
+        help="Anthropic model to use.",
+    ),
+) -> None:
+    """Draft pytest scaffolds from the capsule's invariants (calls Claude API).
+
+    Requires ANTHROPIC_API_KEY in the environment. Output goes to
+    <capsule_dir>/tests/ai_generated/<name>_<timestamp>.py — pytest-skipped
+    stubs the human implements.
+    """
+    try:
+        lc = _load_one(target)
+    except (CapsuleClientError, CapsuleLoadError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        result = generate_tests(lc.capsule, capsule_dir=lc.root, model=model)
+    except AIGenError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[green]wrote[/green] {result.file_path}\n"
+        f"  {result.invariant_count} invariant(s) → {result.bytes_written} bytes  "
+        f"(model={result.model})"
+    )
 
 
 # ---------------------------------------------------------------------------
