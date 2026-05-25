@@ -22,6 +22,8 @@ from capsule.client import (
     pull as pull_capsule,
 )
 from capsule.aigen import AIGenError, generate_tests
+from capsule.decompose import DecomposeError, decompose as decompose_repo
+from capsule.decompose_materialize import materialize, validate_completeness
 from capsule.push import PushError, push as push_capsule
 from capsule.reconstruct import ReconstructError, reconstruct as reconstruct_capsules
 from capsule.diff import (
@@ -526,6 +528,126 @@ def generate_tests_command(
         f"[green]wrote[/green] {result.file_path}\n"
         f"  {result.invariant_count} invariant(s) → {result.bytes_written} bytes  "
         f"(model={result.model})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# decompose
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def decompose(
+    source: str = typer.Argument(
+        ...,
+        help="Git URL or local path of the repo to decompose.",
+    ),
+    out: Path = typer.Option(
+        ...,
+        "--out", "-o",
+        help="Directory to write the produced capsules into.",
+    ),
+    namespace: Optional[str] = typer.Option(
+        None,
+        "--namespace", "-n",
+        help="Prefix every capsule name with `<namespace>-` for unambiguous ownership.",
+    ),
+    prompt: Optional[str] = typer.Option(
+        None,
+        "--prompt", "-p",
+        help="Optional steering hint (e.g. 'keep the public frontend as one capsule').",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="LLM provider: anthropic | gemini. Auto-detected from env if unset.",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model id (provider-specific). Picks a sensible default per provider if unset.",
+    ),
+    clean: bool = typer.Option(
+        False,
+        "--clean",
+        help="Wipe --out before materializing the plan.",
+    ),
+    keep_clone: bool = typer.Option(
+        False,
+        "--keep-clone",
+        help="Keep the temporary git clone after the run (useful for debugging).",
+    ),
+) -> None:
+    """Decompose an existing repo into reusable capsules.
+
+    Sends the repo's tree + key file excerpts to an LLM, gets back a
+    structured proposal of capsule boundaries, and writes the resulting
+    capsule directories (capsule.yaml + install.json + src/ + REUSE.md)
+    into --out. Files the LLM judges project-specific are bundled into
+    `_leftover/` rather than forced into a fake-reusable capsule.
+
+    Requires ANTHROPIC_API_KEY (preferred) or GEMINI_API_KEY in the
+    environment.
+    """
+    plan = None
+    repo_root: Optional[Path] = None
+    is_temp = False
+    try:
+        plan, repo_root, is_temp = decompose_repo(
+            source,
+            namespace=namespace,
+            prompt=prompt,
+            keep=keep_clone,
+            model=model,
+            provider=provider,
+        )
+    except DecomposeError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not plan or not repo_root:
+        err_console.print("[red]decomposer returned no plan[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        result = materialize(plan, repo_root, out, clean=clean)
+    except Exception:
+        if is_temp and not keep_clone:
+            shutil.rmtree(repo_root, ignore_errors=True)
+        raise
+
+    total, claimed, missed = validate_completeness(plan, repo_root)
+
+    if is_temp and not keep_clone:
+        shutil.rmtree(repo_root, ignore_errors=True)
+
+    console.print(
+        f"[green]wrote[/green] {len(result.capsules_written)} capsule(s) to {result.out_dir}"
+    )
+    for name in result.capsules_written:
+        console.print(f"  ✓ {name}")
+    if result.leftover_files:
+        console.print(
+            f"  [yellow]·[/yellow] _leftover: {result.leftover_files} file(s)"
+        )
+
+    coverage_pct = (claimed * 100 // total) if total else 0
+    console.print(
+        f"\nCoverage: {claimed}/{total} files accounted for ({coverage_pct}%)."
+    )
+    if missed:
+        console.print(
+            f"  [yellow]{len(missed)} file(s) not placed in any capsule or leftover bucket:[/yellow]"
+        )
+        for m in missed[:10]:
+            console.print(f"    - {m}")
+        if len(missed) > 10:
+            console.print(f"    ... and {len(missed) - 10} more")
+
+    console.print(
+        f"\n[bold]Next:[/bold]\n"
+        f"  capsule validate {result.out_dir}\n"
+        f"  capsule reconstruct --from {result.out_dir} --out ./recon"
     )
 
 
