@@ -229,7 +229,10 @@ function resolvedJson(entry: RegistryEntry, source_url: string | null) {
     git_url: entry.git_url,
     ref: entry.ref,
     path: entry.path,
-    raw_url: rawUrl(entry),
+    // Private entries never have a usable raw.githubusercontent.com URL —
+    // surfacing one would be misleading (the URL would 404 against a private repo).
+    raw_url: isPrivate(entry) ? null : rawUrl(entry),
+    visibility: entry.visibility ?? "public",
     source_url,
   };
 }
