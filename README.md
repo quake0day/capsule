@@ -1,5 +1,9 @@
 # Capsule
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Spec: v0.1](https://img.shields.io/badge/spec-v0.1-mint)](SPEC.md)
+[![Registry](https://img.shields.io/badge/registry-capsule--registry.pages.dev-mint)](https://capsule-registry.pages.dev)
+
 **The AI-native Unix-like composition layer for software engineering.**
 
 > Unix piped text between programs. Capsule pipes engineering context between AI agents.
@@ -216,11 +220,22 @@ parent directory that will be walked for `capsule.yaml` files.
 
 ## Status
 
-**v0.1.** The spec, the CLI, and three reference capsules. Not yet on PyPI;
-install from source. The spec is allowed to break before v1.0.
+The spec (v0.1), Python CLI (15 commands), Cloudflare Pages registry
+server, and `capsule decompose` / `capsule reconstruct` pipelines all ship.
+The hosted registry at `https://capsule-registry.pages.dev` currently holds
+~100 capsules across multiple real products. Not yet on PyPI; install
+from source. The spec is allowed to break before v1.0.
 
-Layer 2 (web viewer + MCP server + GitHub adapter) is next.
+## Contributing
+
+The highest-leverage contribution is to **publish a capsule** —
+`capsule push` from any project you have, or `capsule decompose --register`
+on any public github repo. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development workflow and the RFC process for spec changes.
+
+By participating you agree to the
+[Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1).
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE).
