@@ -4,7 +4,7 @@
 // authoritative source of truth. These types exist so the server can render
 // the man page with autocomplete + dead-code detection.
 
-export type CapsuleType = "subsystem" | "adapter" | "template" | "bundle";
+export type CapsuleType = "subsystem" | "adapter" | "template" | "bundle" | "library";
 
 export interface Maintainer { name: string; email?: string; }
 

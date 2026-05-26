@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 API_VERSION = "capsule.dev/v0.1"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 
-CapsuleType = Literal["subsystem", "adapter", "template", "bundle"]
+CapsuleType = Literal["subsystem", "adapter", "template", "bundle", "library"]
 
 
 class _Strict(BaseModel):

@@ -37,7 +37,7 @@ kind: Capsule                  # required
 
 name: lab-runtime-docker        # required, kebab-case, unique within a registry
 version: 0.2.0                  # required, semver
-type: subsystem                 # required, one of: subsystem | adapter | template | bundle
+type: subsystem                 # required, one of: subsystem | adapter | template | bundle | library
 domain: education.ctf           # optional, dotted path for grouping
 maintainers:                    # optional
   - name: Quake
