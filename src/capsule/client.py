@@ -19,7 +19,11 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_REGISTRY = "http://127.0.0.1:8788"
+# Production default — anyone running the CLI without setting
+# CAPSULE_REGISTRY talks to the hosted registry. For local development of
+# the registry server itself, export CAPSULE_REGISTRY=http://127.0.0.1:8788
+# before running `capsule serve` / push / pull.
+DEFAULT_REGISTRY = "https://capsule-registry.pages.dev"
 CACHE_ROOT = Path.home() / ".capsule" / "cache"
 
 ADDR_RE = re.compile(r"^(?:capsule://)?([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)(?:@(.+))?$", re.IGNORECASE)

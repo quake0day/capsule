@@ -3,11 +3,25 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+
+def _rmtree_force(path: Path) -> None:
+    """shutil.rmtree that survives read-only files (the git/objects/* case on
+    Windows). Quietly chmod 0o666 and retry on PermissionError."""
+    def _on_error(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+            func(p)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=_on_error)
 
 from capsule.decompose import (
     DecompositionPlan,
@@ -36,7 +50,7 @@ def materialize(
     """Realise `plan` against the cloned source at `repo_root`, into `out_dir`."""
     out = out_dir.expanduser().resolve()
     if clean and out.exists():
-        shutil.rmtree(out)
+        _rmtree_force(out)
     out.mkdir(parents=True, exist_ok=True)
 
     used_source_paths: set[str] = set()

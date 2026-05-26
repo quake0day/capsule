@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -24,6 +25,7 @@ from capsule.client import (
 from capsule.aigen import AIGenError, generate_tests
 from capsule.decompose import DecomposeError, decompose as decompose_repo
 from capsule.decompose_materialize import materialize, validate_completeness
+from capsule.publish import PublishError, publish as publish_capsules
 from capsule.push import PushError, push as push_capsule
 from capsule.reconstruct import ReconstructError, reconstruct as reconstruct_capsules
 from capsule.diff import (
@@ -577,6 +579,15 @@ def decompose(
         "--keep-clone",
         help="Keep the temporary git clone after the run (useful for debugging).",
     ),
+    register: Optional[str] = typer.Option(
+        None,
+        "--register",
+        help=(
+            "After materializing, create a public github repo with this name "
+            "under your gh user, push the capsules there, and register each "
+            "in capsule-registry. End-to-end publish in one command."
+        ),
+    ),
 ) -> None:
     """Decompose an existing repo into reusable capsules.
 
@@ -644,11 +655,42 @@ def decompose(
         if len(missed) > 10:
             console.print(f"    ... and {len(missed) - 10} more")
 
-    console.print(
-        f"\n[bold]Next:[/bold]\n"
-        f"  capsule validate {result.out_dir}\n"
-        f"  capsule reconstruct --from {result.out_dir} --out ./recon"
-    )
+    if register:
+        console.print(
+            f"\n[bold cyan]registering[/bold cyan]: pushing to "
+            f"github.com/<you>/{register} then capsule-registry…"
+        )
+        try:
+            pr = publish_capsules(
+                result.out_dir,
+                register,
+                source_note=source,
+                force=clean,
+            )
+        except PublishError as exc:
+            err_console.print(f"[red]publish failed: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+        console.print(
+            f"[green]github[/green]  {pr.github_url}  (branch {pr.branch})"
+        )
+        for name in pr.capsules_pushed:
+            console.print(f"  ✓ registered  capsule://<you>/{name}")
+        for name, err in pr.capsules_failed:
+            console.print(f"  [red]✗[/red] {name}: {err}")
+        registry_base = os.environ.get("CAPSULE_REGISTRY", "https://capsule-registry.pages.dev")
+        console.print(
+            f"\n[bold]Live URLs:[/bold]\n"
+            f"  index:    {registry_base}/\n"
+            f"  capsules: {registry_base}/c/<your-gh-user>/<capsule-name>"
+        )
+    else:
+        console.print(
+            f"\n[bold]Next:[/bold]\n"
+            f"  capsule validate {result.out_dir}\n"
+            f"  capsule reconstruct --from {result.out_dir} --out ./recon\n"
+            f"  capsule decompose ... --register <github-repo-name>   # one-shot publish"
+        )
 
 
 # ---------------------------------------------------------------------------
