@@ -41,6 +41,17 @@ GEMINI_ENDPOINT_TMPL = (
 )
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
+# Cloudflare Workers AI — third provider. Auto-reuses wrangler OAuth so the
+# user doesn't need to create a fresh API token.
+from capsule.cf_workers_ai import (
+    DEFAULT_WORKERS_AI_MODEL,
+    WorkersAIError,
+    call_workers_ai,
+    estimate_cost_usd,
+    resolve_credentials as _resolve_cf_credentials,
+    resolve_model as _resolve_cf_model,
+)
+
 # Hard caps to keep prompts under control.
 MAX_TREE_FILES = 800
 MAX_FILE_BYTES = 100_000        # individual file ceiling for excerpt
@@ -430,10 +441,63 @@ def extract_json(response: dict) -> dict:
             raise DecomposeError(f"could not locate JSON in response. First 300 chars:\n{text[:300]}")
         text = text[first:last + 1]
 
+    return _tolerant_json_parse(text)
+
+
+def _tolerant_json_parse(text: str) -> dict:
+    """Try strict JSON first; if it fails, apply a few well-known LLM fixes."""
+    # Strict pass.
     try:
         return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise DecomposeError(f"JSON parse failed: {exc}. First 300 chars:\n{text[:300]}") from exc
+    except json.JSONDecodeError:
+        pass
+
+    # Common LLM quirks, in order of how aggressive each fix is:
+    candidates = [
+        _strip_trailing_commas(text),
+        _strip_trailing_commas(_swap_singlequote_keys(text)),
+        _strip_trailing_commas(_swap_singlequote_strings(text)),
+    ]
+    last_err: Exception | None = None
+    for cleaned in candidates:
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            last_err = exc
+            continue
+
+    msg = str(last_err) if last_err else "(no parse attempts)"
+    raise DecomposeError(
+        f"JSON parse failed even after relaxed cleanup: {msg}.\n"
+        f"First 300 chars:\n{text[:300]}"
+    )
+
+
+def _strip_trailing_commas(s: str) -> str:
+    """Remove `,` before a closing `}` or `]`. Most common LLM mistake."""
+    return re.sub(r",\s*(\}|\])", r"\1", s)
+
+
+def _swap_singlequote_keys(s: str) -> str:
+    """Convert `'key':` to `"key":` (only object keys, less risky than full
+    single→double conversion which would break apostrophes inside strings)."""
+    return re.sub(
+        r"(?P<lead>[\{\[,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(?=\s*:)",
+        r'\g<lead>"\2"',
+        s,
+    )
+
+
+def _swap_singlequote_strings(s: str) -> str:
+    """Aggressive: convert all `'...'` to `"..."`. Only used as last resort
+    because apostrophes inside strings can break the conversion."""
+    # Replace single quotes that look like JSON string delimiters: appear
+    # after `:`, `[`, or `,` for values, or after `{`, `,` for keys.
+    return re.sub(
+        r"(?P<lead>[:\[\{,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'",
+        r'\g<lead>"\2"',
+        s,
+    )
 
 
 def parse_plan(source: str, payload: dict) -> DecompositionPlan:
@@ -516,7 +580,14 @@ def decompose(
       GEMINI_API_KEY    → gemini
     """
     chosen_provider, key = _pick_provider(provider, api_key)
-    chosen_model = model or (DEFAULT_MODEL if chosen_provider == "anthropic" else DEFAULT_GEMINI_MODEL)
+    chosen_model = model
+    if not chosen_model:
+        if chosen_provider == "anthropic":
+            chosen_model = DEFAULT_MODEL
+        elif chosen_provider == "gemini":
+            chosen_model = DEFAULT_GEMINI_MODEL
+        else:  # workers-ai
+            chosen_model = DEFAULT_WORKERS_AI_MODEL
 
     repo_root, is_temp = acquire_repo(source, keep=keep)
     files = walk_repo(repo_root)
@@ -527,15 +598,32 @@ def decompose(
 
     if chosen_provider == "anthropic":
         response = call_anthropic(full_prompt, api_key=key, model=chosen_model)
-    else:
+    elif chosen_provider == "gemini":
         response = call_gemini(full_prompt, api_key=key, model=chosen_model)
+    else:  # workers-ai
+        # `key` here is the credentials object packaged by _pick_provider
+        # for workers-ai (not a plain string).
+        creds = key  # type: ignore[assignment]
+        try:
+            response = call_workers_ai(
+                full_prompt,
+                model=chosen_model,
+                creds=creds,
+            )
+        except WorkersAIError as exc:
+            raise DecomposeError(str(exc)) from exc
 
     payload = extract_json(response)
     plan = parse_plan(source, payload)
     return plan, repo_root, is_temp
 
 
-def _pick_provider(provider: str | None, api_key: str | None) -> tuple[str, str]:
+def _pick_provider(provider: str | None, api_key: str | None):
+    """Resolve (provider_name, credentials).
+
+    `credentials` is a plain string for anthropic/gemini providers, and a
+    CFCredentials dataclass for workers-ai.
+    """
     if provider == "anthropic":
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not key:
@@ -546,7 +634,13 @@ def _pick_provider(provider: str | None, api_key: str | None) -> tuple[str, str]
         if not key:
             raise DecomposeError("provider=gemini but GEMINI_API_KEY is unset")
         return "gemini", key
-    # Auto: prefer Anthropic if its key is set, else Gemini.
+    if provider == "workers-ai":
+        try:
+            creds = _resolve_cf_credentials()
+        except WorkersAIError as exc:
+            raise DecomposeError(str(exc)) from exc
+        return "workers-ai", creds
+    # Auto: prefer Anthropic if its key is set, else Gemini, else Workers AI.
     if api_key:
         # Explicit key passed but no provider — assume anthropic.
         return "anthropic", api_key
@@ -556,8 +650,16 @@ def _pick_provider(provider: str | None, api_key: str | None) -> tuple[str, str]
     gem = os.environ.get("GEMINI_API_KEY")
     if gem:
         return "gemini", gem
+    # Last resort: try Workers AI via wrangler OAuth.
+    try:
+        creds = _resolve_cf_credentials()
+        return "workers-ai", creds
+    except WorkersAIError:
+        pass
     raise DecomposeError(
-        "no LLM key found. Set ANTHROPIC_API_KEY (preferred) or GEMINI_API_KEY:\n"
-        "  export ANTHROPIC_API_KEY=sk-ant-...\n"
-        "  export GEMINI_API_KEY=AIza..."
+        "no LLM credentials found. Set one of:\n"
+        "  export ANTHROPIC_API_KEY=sk-ant-...   (preferred)\n"
+        "  export GEMINI_API_KEY=AIza...         (free fallback)\n"
+        "  CF_API_TOKEN + CF_ACCOUNT_ID          (workers-ai, REST direct)\n"
+        "  or just `wrangler login` once         (workers-ai via OAuth, zero setup)"
     )

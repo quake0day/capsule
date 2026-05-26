@@ -312,6 +312,65 @@ a:hover { border-bottom-color: var(--accent); }
 
 .hint-mint { color: var(--accent); }
 
+/* Benchmark page */
+.benchmarks { max-width: 1100px; margin: 0 auto; padding: 36px 24px 80px; }
+.benchmarks h1 { font-size: 22px; margin: 0 0 8px; }
+.benchmarks h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-3); margin: 32px 0 12px; border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+}
+.benchmarks .lede { color: var(--ink-2); font-size: 14px; margin-bottom: 24px; }
+.benchmarks .lede strong { color: var(--ink); }
+
+.benchmarks table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.benchmarks th, .benchmarks td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.benchmarks th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  background: var(--code-bg);
+}
+.benchmarks td.num, .benchmarks th.num {
+  text-align: right;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+}
+.benchmarks tr.row-ok td { background: rgba(95, 182, 130, 0.04); }
+.benchmarks tr.row-fail td { background: rgba(180, 80, 40, 0.05); color: var(--ink-3); }
+.benchmarks tr.row-partial td { background: rgba(180, 138, 46, 0.05); }
+.benchmarks .status-ok { color: #1f4a25; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.benchmarks .status-fail { color: #6b3010; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; cursor: help; }
+.benchmarks .prov-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--code-bg);
+  color: var(--ink-2);
+}
+.benchmarks .prov-pill.prov-workers-ai { background: #fef3c7; color: #6b4f0f; }
+.benchmarks .prov-pill.prov-gemini    { background: #dbeafe; color: #1d4f8b; }
+.benchmarks .prov-pill.prov-anthropic { background: #fce7f3; color: #861d5e; }
+
+.benchmarks .bench-method { margin-top: 40px; }
+.benchmarks .bench-method ol { padding-left: 24px; font-size: 13.5px; color: var(--ink-2); line-height: 1.6; }
+.benchmarks .bench-method li { margin: 6px 0; }
+.benchmarks .bench-method .hint { font-size: 12px; color: var(--ink-3); }
+
+
 /* Source-files section on the man page */
 .source-files ul.files {
   list-style: none;

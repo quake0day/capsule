@@ -24,3 +24,6 @@ unix.txt
 # Scratch dir for the design-handoff tarball — never commit.
 .design/
 
+# Local Claude Code session state.
+.claude/
+
