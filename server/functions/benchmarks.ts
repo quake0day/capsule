@@ -21,6 +21,7 @@ interface BenchRun {
   started_at: string;
   wall_clock_s: number;
   success: boolean;
+  passes?: string;             // "single" | "multi" — added in v2; older rows omit it
   capsule_count: number;
   leftover_count: number;
   files_total: number;
@@ -71,12 +72,13 @@ function render(runs: BenchRun[], generated_at: string): string {
 </main>`;
   }
 
-  // Keep only the newest run per (repo_name, model_full) so the table
-  // shows the freshest comparison. Older runs are still in the JSON for
-  // audit, just not surfaced here.
+  // Keep only the newest run per (repo_name, model_full, passes) so the
+  // table shows the freshest comparison and single vs multi-pass runs
+  // appear as separate rows. Older runs are kept in the JSON for audit.
   const newest = new Map<string, BenchRun>();
   for (const r of runs) {
-    const key = `${r.repo_name}::${r.model_full}`;
+    const passes = r.passes ?? "single";
+    const key = `${r.repo_name}::${r.model_full}::${passes}`;
     const existing = newest.get(key);
     if (!existing || existing.started_at < r.started_at) {
       newest.set(key, r);
@@ -184,6 +186,7 @@ function renderDetailTable(latest: BenchRun[]): string {
       <tr>
         <th>Repo</th>
         <th>Model</th>
+        <th>Passes</th>
         <th>Status</th>
         <th class="num">Capsules</th>
         <th class="num">Coverage</th>
@@ -194,20 +197,24 @@ function renderDetailTable(latest: BenchRun[]): string {
       </tr>
     </thead>
     <tbody>
-      ${sorted.map((r) => `
+      ${sorted.map((r) => {
+        const passes = r.passes ?? "single";
+        return `
       <tr class="${r.success ? "row-ok" : "row-fail"}">
         <td><a href="${h(r.repo)}"><code>${h(r.repo_name)}</code></a></td>
         <td><code>${h(r.model)}</code></td>
+        <td><span class="pass-pill pass-${h(passes)}">${h(passes)}</span></td>
         <td>${r.success
           ? '<span class="status-ok">ok</span>'
           : `<span class="status-fail" title="${h(r.error ?? "")}">${h(r.error_class ?? "fail")}</span>`}</td>
         <td class="num">${r.success ? r.capsule_count : "—"}</td>
         <td class="num">${r.success ? r.file_coverage_pct + "%" : "—"}</td>
         <td class="num">${r.wall_clock_s.toFixed(1)}s</td>
-        <td class="num">${r.input_chars.toLocaleString()}</td>
-        <td class="num">${r.success ? r.output_chars.toLocaleString() : "—"}</td>
-        <td class="num">${r.success ? "$" + r.cost_usd_est.toFixed(4) : "—"}</td>
-      </tr>`).join("")}
+        <td class="num">${r.input_chars > 0 ? r.input_chars.toLocaleString() : "—"}</td>
+        <td class="num">${r.success && r.output_chars > 0 ? r.output_chars.toLocaleString() : "—"}</td>
+        <td class="num">${r.success && r.cost_usd_est > 0 ? "$" + r.cost_usd_est.toFixed(4) : "—"}</td>
+      </tr>`;
+      }).join("")}
     </tbody>
   </table>
 </section>`;

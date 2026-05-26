@@ -82,6 +82,7 @@ class BenchResult:
     started_at: str
     wall_clock_s: float
     success: bool
+    passes: str = "single"            # "single" | "multi"
     capsule_count: int = 0
     leftover_count: int = 0
     files_total: int = 0
@@ -106,9 +107,9 @@ class ResultsDoc:
 # ---------------------------------------------------------------------------
 
 
-def run_one(repo_url: str, provider: str, model: str) -> BenchResult:
-    """Execute one (repo, provider, model) combo. Always returns a BenchResult,
-    even on failure (success=False, error set)."""
+def run_one(repo_url: str, provider: str, model: str, passes: str = "single") -> BenchResult:
+    """Execute one (repo, provider, model, passes) combo. Always returns a
+    BenchResult, even on failure (success=False, error set)."""
     repo_name = repo_url.rstrip("/").split("/")[-1]
     started_at = datetime.now(timezone.utc).isoformat()
     model_full = _model_full(provider, model)
@@ -122,59 +123,97 @@ def run_one(repo_url: str, provider: str, model: str) -> BenchResult:
         started_at=started_at,
         wall_clock_s=0.0,
         success=False,
+        passes=passes,
     )
 
     t0 = time.monotonic()
     try:
-        repo_root, is_temp = acquire_repo(repo_url)
-        try:
-            files = walk_repo(repo_root)
-            result.files_total = len(files)
-            if not files:
-                raise DecomposeError("no files in repo")
-
-            context = build_context(repo_root, files)
-            prompt = build_prompt(repo_url, context, namespace=None, user_hint=None)
-            result.input_chars = len(prompt)
-            result.input_tokens_est = result.input_chars // 4  # rough
-
-            response = _call(provider, model, prompt)
-            result.output_chars = len(response.get("text", ""))
-            result.output_tokens_est = result.output_chars // 4
-
-            payload = extract_json(response)
-            plan = parse_plan(repo_url, payload)
-
-            placed = sum(len(c.files) for c in plan.capsules)
-            leftover = len(plan.leftover_files)
-            covered = placed + leftover
-            result.capsule_count = len(plan.capsules)
-            result.leftover_count = leftover
-            result.file_coverage_pct = (covered * 100 // result.files_total) if result.files_total else 0
-
-            if provider == "workers-ai":
-                result.cost_usd_est = estimate_cost_usd(
-                    model_full, result.input_tokens_est, result.output_tokens_est,
-                )
-            else:
-                # Rough Gemini/Anthropic pricing (we don't track precisely in v1)
-                result.cost_usd_est = _estimate_cost_other(
-                    provider, model, result.input_tokens_est, result.output_tokens_est,
-                )
-
-            result.success = True
-        finally:
-            if is_temp:
-                import shutil
-                shutil.rmtree(repo_root, ignore_errors=True)
+        if passes == "multi":
+            _run_multipass(result, repo_url, provider, model)
+        else:
+            _run_singlepass(result, repo_url, provider, model)
     except Exception as exc:
         result.error = str(exc)[:500]
         result.error_class = exc.__class__.__name__
-        # Keep partial stats if we got far enough to compute them.
     finally:
         result.wall_clock_s = round(time.monotonic() - t0, 2)
 
     return result
+
+
+def _run_singlepass(result: BenchResult, repo_url: str, provider: str, model: str) -> None:
+    repo_root, is_temp = acquire_repo(repo_url)
+    try:
+        files = walk_repo(repo_root)
+        result.files_total = len(files)
+        if not files:
+            raise DecomposeError("no files in repo")
+
+        context = build_context(repo_root, files)
+        prompt = build_prompt(repo_url, context, namespace=None, user_hint=None)
+        result.input_chars = len(prompt)
+        result.input_tokens_est = result.input_chars // 4
+
+        response = _call(provider, model, prompt)
+        result.output_chars = len(response.get("text", ""))
+        result.output_tokens_est = result.output_chars // 4
+
+        payload = extract_json(response)
+        plan = parse_plan(repo_url, payload)
+        _fill_plan_metrics(result, plan)
+        result.cost_usd_est = _estimate_cost(provider, model_full(result), result.input_tokens_est, result.output_tokens_est)
+        result.success = True
+    finally:
+        if is_temp:
+            import shutil
+            shutil.rmtree(repo_root, ignore_errors=True)
+
+
+def _run_multipass(result: BenchResult, repo_url: str, provider: str, model: str) -> None:
+    """For multi-pass we let decompose() orchestrate. We don't see per-call
+    token counts; cost is estimated from the cumulative plan size as a
+    rough proxy."""
+    from capsule.decompose import decompose
+    import shutil
+
+    plan, repo_root, is_temp = decompose(
+        repo_url,
+        model=model,
+        provider=provider,
+        passes="multi",
+    )
+    try:
+        result.files_total = len(walk_repo(repo_root))
+        _fill_plan_metrics(result, plan)
+        # Cost estimate: multi-pass cost ≈ single-pass × 1.5 as a placeholder
+        # until we wire token usage through (LLM responses include usage
+        # blocks on most providers — TODO for v2).
+        result.input_chars = 0
+        result.output_chars = 0
+        result.cost_usd_est = 0.0
+        result.success = True
+    finally:
+        if is_temp:
+            shutil.rmtree(repo_root, ignore_errors=True)
+
+
+def _fill_plan_metrics(result: BenchResult, plan) -> None:
+    placed = sum(len(c.files) for c in plan.capsules)
+    leftover = len(plan.leftover_files)
+    covered = placed + leftover
+    result.capsule_count = len(plan.capsules)
+    result.leftover_count = leftover
+    result.file_coverage_pct = (covered * 100 // result.files_total) if result.files_total else 0
+
+
+def model_full(result: BenchResult) -> str:
+    return result.model_full or result.model
+
+
+def _estimate_cost(provider: str, model_full_id: str, in_tok: int, out_tok: int) -> float:
+    if provider == "workers-ai":
+        return estimate_cost_usd(model_full_id, in_tok, out_tok)
+    return _estimate_cost_other(provider, model_full_id, in_tok, out_tok)
 
 
 def _model_full(provider: str, model: str) -> str:
@@ -242,18 +281,28 @@ def save_results(path: Path, doc: ResultsDoc) -> None:
 # ---------------------------------------------------------------------------
 
 
-def parse_run_spec(spec: str) -> list[tuple[str, str]]:
-    """`gemini=gemini-2.5-flash,workers-ai=gpt-oss-20b,workers-ai=gpt-oss-120b`
-    → [(gemini, gemini-2.5-flash), (workers-ai, gpt-oss-20b), ...]"""
-    out: list[tuple[str, str]] = []
+def parse_run_spec(spec: str) -> list[tuple[str, str, str]]:
+    """`gemini=gemini-2.5-flash,workers-ai=llama-3.3-70b:multi`
+    → [(gemini, gemini-2.5-flash, single), (workers-ai, llama-3.3-70b, multi)]
+
+    Format per piece: `provider=model` or `provider=model:passes`.
+    `passes` defaults to "single" when omitted.
+    """
+    out: list[tuple[str, str, str]] = []
     for piece in spec.split(","):
         piece = piece.strip()
         if not piece:
             continue
         if "=" not in piece:
-            raise ValueError(f"bad --runs piece '{piece}', expected provider=model")
-        provider, model = piece.split("=", 1)
-        out.append((provider.strip(), model.strip()))
+            raise ValueError(f"bad --runs piece '{piece}', expected provider=model[:passes]")
+        provider, rest = piece.split("=", 1)
+        if ":" in rest:
+            model, passes = rest.split(":", 1)
+        else:
+            model, passes = rest, "single"
+        if passes not in ("single", "multi"):
+            raise ValueError(f"bad passes '{passes}' in '{piece}', must be single or multi")
+        out.append((provider.strip(), model.strip(), passes.strip()))
     return out
 
 
@@ -274,19 +323,19 @@ def main() -> int:
     args = ap.parse_args()
 
     repos = [r.strip() for r in args.repos.split(",") if r.strip()]
-    pairs = parse_run_spec(args.runs)
-    total = len(repos) * len(pairs)
-    print(f"\nRunning {total} benchmarks ({len(repos)} repo(s) × {len(pairs)} model(s))\n")
+    triples = parse_run_spec(args.runs)
+    total = len(repos) * len(triples)
+    print(f"\nRunning {total} benchmarks ({len(repos)} repo(s) × {len(triples)} model(s))\n")
 
     doc = load_results(args.out)
     n = 0
     for repo_url in repos:
-        for provider, model in pairs:
+        for provider, model, passes in triples:
             n += 1
-            label = f"{provider}/{model}"
+            label = f"{provider}/{model}" + (f":{passes}" if passes != "single" else "")
             print(f"  [{n}/{total}] {repo_url}  via  {label}...", flush=True)
             try:
-                r = run_one(repo_url, provider, model)
+                r = run_one(repo_url, provider, model, passes=passes)
             except Exception as exc:  # belt and suspenders
                 print(f"        ✗ harness crashed: {exc}")
                 traceback.print_exc()

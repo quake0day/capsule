@@ -588,6 +588,14 @@ def decompose(
             "in capsule-registry. End-to-end publish in one command."
         ),
     ),
+    passes: str = typer.Option(
+        "single",
+        "--passes",
+        help="single | multi. Multi-pass first asks the LLM for the capsule "
+             "skeleton, then fills in each capsule's contract separately — "
+             "lets small-context models (Llama 3.3 70B) and slower models "
+             "(Kimi K2.6) compete on larger repos.",
+    ),
 ) -> None:
     """Decompose an existing repo into reusable capsules.
 
@@ -603,6 +611,9 @@ def decompose(
     plan = None
     repo_root: Optional[Path] = None
     is_temp = False
+    if passes not in ("single", "multi"):
+        err_console.print(f"[red]--passes must be 'single' or 'multi', got '{passes}'[/red]")
+        raise typer.Exit(code=2)
     try:
         plan, repo_root, is_temp = decompose_repo(
             source,
@@ -611,6 +622,7 @@ def decompose(
             keep=keep_clone,
             model=model,
             provider=provider,
+            passes=passes,
         )
     except DecomposeError as exc:
         err_console.print(f"[red]{exc}[/red]")

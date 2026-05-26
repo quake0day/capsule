@@ -572,6 +572,7 @@ def decompose(
     model: str | None = None,
     provider: str | None = None,  # "anthropic" | "gemini" | None (auto)
     api_key: str | None = None,
+    passes: str = "single",       # "single" | "multi"
 ) -> tuple[DecompositionPlan, Path, bool]:
     """Acquire + analyse + plan. Returns (plan, repo_root, is_temp_dir).
 
@@ -594,28 +595,102 @@ def decompose(
     if not files:
         raise DecomposeError(f"no files found under {repo_root}")
     context = build_context(repo_root, files)
-    full_prompt = build_prompt(source, context, namespace, prompt)
 
-    if chosen_provider == "anthropic":
-        response = call_anthropic(full_prompt, api_key=key, model=chosen_model)
-    elif chosen_provider == "gemini":
-        response = call_gemini(full_prompt, api_key=key, model=chosen_model)
-    else:  # workers-ai
-        # `key` here is the credentials object packaged by _pick_provider
-        # for workers-ai (not a plain string).
+    def _call(prompt_text: str) -> dict:
+        if chosen_provider == "anthropic":
+            return call_anthropic(prompt_text, api_key=key, model=chosen_model)
+        if chosen_provider == "gemini":
+            return call_gemini(prompt_text, api_key=key, model=chosen_model)
+        # workers-ai — `key` here is the CFCredentials object
         creds = key  # type: ignore[assignment]
         try:
-            response = call_workers_ai(
-                full_prompt,
+            return call_workers_ai(
+                prompt_text,
                 model=chosen_model,
                 creds=creds,
             )
         except WorkersAIError as exc:
             raise DecomposeError(str(exc)) from exc
 
-    payload = extract_json(response)
-    plan = parse_plan(source, payload)
+    if passes == "multi":
+        # Pass-1 uses a SHORT context (tree + READMEs + root-level configs).
+        # This is what makes multi-pass actually unblock small-context models.
+        from capsule.decompose_multipass import build_short_context
+        short_context = build_short_context(repo_root, files)
+        plan = _decompose_multipass(
+            source=source,
+            repo_root=repo_root,
+            short_context=short_context,
+            namespace=namespace,
+            user_hint=prompt,
+            call=_call,
+        )
+    else:
+        full_prompt = build_prompt(source, context, namespace, prompt)
+        response = _call(full_prompt)
+        payload = extract_json(response)
+        plan = parse_plan(source, payload)
     return plan, repo_root, is_temp
+
+
+def _decompose_multipass(
+    *,
+    source: str,
+    repo_root: Path,
+    short_context: str,
+    namespace: str | None,
+    user_hint: str | None,
+    call,
+) -> DecompositionPlan:
+    """Two-pass decompose: skeleton, then per-capsule contract details."""
+    from capsule.decompose_multipass import (
+        build_pass1_prompt,
+        build_pass2_prompt,
+        parse_pass1,
+        parse_pass2_into,
+    )
+
+    # --- Pass 1: skeleton (capsule list + file assignment + 1-line purposes)
+    p1_prompt = build_pass1_prompt(source, short_context, namespace, user_hint)
+    p1_response = call(p1_prompt)
+    p1_payload = extract_json(p1_response)
+    skeleton = parse_pass1(p1_payload)
+
+    # --- Pass 2: fill in the contract for each capsule
+    capsules: list[ProposedCapsule] = []
+    for sk_cap in skeleton.capsules:
+        if not sk_cap.name:
+            continue
+        p2_prompt = build_pass2_prompt(
+            skeleton=skeleton,
+            capsule=sk_cap,
+            repo_root=repo_root,
+            namespace=namespace,
+        )
+        try:
+            p2_response = call(p2_prompt)
+            p2_payload = extract_json(p2_response)
+            capsules.append(parse_pass2_into(sk_cap, p2_payload))
+        except DecomposeError:
+            # If pass-2 fails for a capsule, fall back to a skeleton-only
+            # ProposedCapsule so the plan is still produced. The harness
+            # / page will surface the partial nature via missing fields.
+            capsules.append(ProposedCapsule(
+                name=sk_cap.name,
+                type=sk_cap.type or "subsystem",
+                purpose_summary=sk_cap.purpose_summary,
+                owns=[],
+                does_not_own=[],
+                files=[ProposedFile(from_=f.from_, to=f.to) for f in sk_cap.files],
+            ))
+
+    return DecompositionPlan(
+        source=source,
+        summary=skeleton.summary,
+        capsules=capsules,
+        leftover_files=skeleton.leftover_files,
+        leftover_explanation=skeleton.leftover_explanation,
+    )
 
 
 def _pick_provider(provider: str | None, api_key: str | None):

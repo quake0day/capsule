@@ -364,6 +364,18 @@ a:hover { border-bottom-color: var(--accent); }
 .benchmarks .prov-pill.prov-workers-ai { background: #fef3c7; color: #6b4f0f; }
 .benchmarks .prov-pill.prov-gemini    { background: #dbeafe; color: #1d4f8b; }
 .benchmarks .prov-pill.prov-anthropic { background: #fce7f3; color: #861d5e; }
+.benchmarks .pass-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--code-bg);
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.benchmarks .pass-pill.pass-multi { background: #e0eddf; color: #1f4a25; }
 
 .benchmarks .bench-method { margin-top: 40px; }
 .benchmarks .bench-method ol { padding-left: 24px; font-size: 13.5px; color: var(--ink-2); line-height: 1.6; }
