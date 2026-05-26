@@ -27,3 +27,7 @@ unix.txt
 # Local Claude Code session state.
 .claude/
 
+# Per-project skill bundles installed via `npx skills add` — tooling, not source.
+.agents/
+skills-lock.json
+

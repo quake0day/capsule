@@ -25,6 +25,16 @@ export interface RegistryEntry {
   git_url: string;
   ref: string;
   path: string;
+  /** "public" (default) lists in the open index and serves via raw.githubusercontent.com.
+   *  "private" is hidden from public listings and requires Authorization on every read;
+   *  GitHub itself acts as the access oracle (we just proxy a Contents-API call with
+   *  the user's token). */
+  visibility?: "public" | "private";
+}
+
+/** Convenience: true when entry should be treated as private. */
+export function isPrivate(e: RegistryEntry): boolean {
+  return e.visibility === "private";
 }
 
 interface RegistryFile {
@@ -112,6 +122,7 @@ async function readAllKV(kv: KVNamespace): Promise<RegistryEntry[]> {
       try {
         const e = JSON.parse(raw) as RegistryEntry;
         if (e?.owner && e?.name && e?.version && e?.git_url && e?.ref && e?.path) {
+          if (e.visibility !== "private") e.visibility = "public";
           out.push(e);
         }
       } catch {
@@ -156,12 +167,17 @@ export function uniqueLatest(): RegistryEntry[] {
   return uniqueLatestFrom(STATIC_REGISTRY.entries);
 }
 
-/** KV-aware highest-version-per-name. */
+/** KV-aware highest-version-per-name. Excludes private entries by default;
+ *  pass { includePrivate: true } to include them (e.g. for an authed listing). */
 export async function uniqueLatestWithKV(
   kv: KVNamespace | undefined,
+  opts: { includePrivate?: boolean } = {},
 ): Promise<RegistryEntry[]> {
   const entries = await allEntriesWithKV(kv);
-  return uniqueLatestFrom(entries);
+  const filtered = opts.includePrivate
+    ? entries
+    : entries.filter((e) => e.visibility !== "private");
+  return uniqueLatestFrom(filtered);
 }
 
 function uniqueLatestFrom(entries: readonly RegistryEntry[]): RegistryEntry[] {

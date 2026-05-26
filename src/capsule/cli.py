@@ -588,6 +588,16 @@ def decompose(
             "in capsule-registry. End-to-end publish in one command."
         ),
     ),
+    private: bool = typer.Option(
+        False,
+        "--private",
+        help=(
+            "When combined with --register, creates a PRIVATE github repo and "
+            "marks the registry entries visibility=private. The capsules become "
+            "addressable but only readable by users whose GitHub token has access "
+            "to the source repo."
+        ),
+    ),
     passes: str = typer.Option(
         "single",
         "--passes",
@@ -668,9 +678,10 @@ def decompose(
             console.print(f"    ... and {len(missed) - 10} more")
 
     if register:
+        privacy_word = "private" if private else "public"
         console.print(
             f"\n[bold cyan]registering[/bold cyan]: pushing to "
-            f"github.com/<you>/{register} then capsule-registry…"
+            f"github.com/<you>/{register} ({privacy_word}) then capsule-registry…"
         )
         try:
             pr = publish_capsules(
@@ -678,6 +689,7 @@ def decompose(
                 register,
                 source_note=source,
                 force=clean,
+                private=private,
             )
         except PublishError as exc:
             err_console.print(f"[red]publish failed: {exc}[/red]")

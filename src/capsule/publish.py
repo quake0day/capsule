@@ -46,12 +46,18 @@ def publish(
     source_note: str = "",
     initial_commit_message: str | None = None,
     force: bool = False,
+    private: bool = False,
 ) -> PublishResult:
     """Create the github repo + push + register every capsule.
 
     Idempotent on retry. If `force` is True (typically because the caller
     used --clean), the push uses --force-with-lease so a fresh local
     history can replace a stale remote that we created on a previous run.
+
+    If `private` is True, the github repo is created with `--private` and
+    every capsule entry is registered with visibility=private — meaning
+    the registry server will refuse to serve the capsule.yaml without a
+    valid GitHub token that can read the source repo.
     """
     capsules_dir = capsules_dir.expanduser().resolve()
     if not capsules_dir.is_dir():
@@ -72,7 +78,7 @@ def publish(
     github_url = f"https://github.com/{gh_login}/{repo_name}"
 
     _init_git_if_needed(capsules_dir)
-    _ensure_remote(capsules_dir, github_url, repo_name)
+    _ensure_remote(capsules_dir, github_url, repo_name, private=private)
     branch = _ensure_branch(capsules_dir)
 
     msg = initial_commit_message or (
@@ -98,7 +104,7 @@ def publish(
             result.capsules_failed.append((child.name, f"load failed: {exc}"))
             continue
         try:
-            push_capsule(lc, ref=branch)
+            push_capsule(lc, ref=branch, private=private)
         except PushError as exc:
             result.capsules_failed.append((child.name, str(exc)))
             continue
@@ -131,7 +137,7 @@ def _init_git_if_needed(dir: Path) -> None:
     _git(dir, ["init", "-b", "main"], errmsg="git init failed")
 
 
-def _ensure_remote(dir: Path, github_url: str, repo_name: str) -> None:
+def _ensure_remote(dir: Path, github_url: str, repo_name: str, *, private: bool = False) -> None:
     """Set origin to github_url; create the repo via gh if it does not exist."""
     # If `origin` already points at our target, nothing to do.
     current = _git(dir, ["remote", "get-url", "origin"], check=False)
@@ -145,10 +151,11 @@ def _ensure_remote(dir: Path, github_url: str, repo_name: str) -> None:
 
     # If the repo does not exist on github, create it.
     if not _gh_repo_exists(github_url):
+        visibility_flag = "--private" if private else "--public"
         try:
             subprocess.run(
                 ["gh", "repo", "create", repo_name,
-                 "--public",
+                 visibility_flag,
                  "--description", "Decomposed by capsule decompose.",
                  "--confirm"],
                 check=True, capture_output=True, text=True,

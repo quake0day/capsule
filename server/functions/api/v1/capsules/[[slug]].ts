@@ -68,7 +68,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, params, env })
     );
   }
 
-  let body: { git_url?: string; ref?: string; path?: string };
+  let body: { git_url?: string; ref?: string; path?: string; visibility?: string };
   try {
     body = await request.json();
   } catch {
@@ -83,10 +83,12 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, params, env })
   }
   if (!/^https:\/\/github\.com\//i.test(git_url)) {
     return json(
-      { error: `only github.com repos are accepted in v0.3 (got ${git_url})` },
+      { error: `only github.com repos are accepted (got ${git_url})` },
       400,
     );
   }
+  const visibility: "public" | "private" =
+    body.visibility === "private" ? "private" : "public";
 
   const candidate: RegistryEntry = {
     owner: addr.owner,
@@ -95,13 +97,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, params, env })
     git_url,
     ref,
     path,
+    visibility,
   };
 
   // Round-trip fetch: confirm the capsule.yaml is reachable, parses, and
-  // its own declared name/version match the address being claimed.
+  // its own declared name/version match the address being claimed. For
+  // private entries we use the pushing token (already proven owned by
+  // `addr.owner` above) to authenticate the fetch.
   let parsed;
   try {
-    parsed = await fetchCapsule(candidate);
+    parsed = await fetchCapsule(candidate, visibility === "private" ? token : undefined);
   } catch (err) {
     const msg = err instanceof CapsuleFetchError ? err.message : String(err);
     return json({ error: `could not fetch the proposed capsule: ${msg}` }, 422);

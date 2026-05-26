@@ -58,11 +58,15 @@ def push(
     git_url: str | None = None,
     ref: str | None = None,
     token: str | None = None,
+    private: bool = False,
 ) -> PushResult:
     """Publish a loaded capsule to the registry.
 
     git_url / ref are inferred from the local git checkout if not given.
     path is computed as the capsule.yaml's path relative to the repo root.
+    If `private` is True, the entry is registered with visibility=private
+    and subsequent reads require Authorization with a token that can read
+    the source repo.
     """
     source = _resolve_source(lc.path, git_url=git_url, ref=ref)
     creds = token or _find_token()
@@ -88,11 +92,14 @@ def push(
     version = lc.capsule.version
     address = f"capsule://{owner}/{name}@{version}"
     url = f"{registry_base()}/api/v1/capsules/{owner}/{name}@{version}"
-    body = json.dumps({
+    body_dict = {
         "git_url": source.git_url,
         "ref": source.ref,
         "path": source.path,
-    }).encode("utf-8")
+    }
+    if private:
+        body_dict["visibility"] = "private"
+    body = json.dumps(body_dict).encode("utf-8")
 
     req = urllib.request.Request(
         url,

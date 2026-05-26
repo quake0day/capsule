@@ -394,7 +394,300 @@ a:hover { border-bottom-color: var(--accent); }
 }
 .benchmarks .pass-pill.pass-multi { background: #e0eddf; color: #1f4a25; }
 
-/* Research page */
+/* =====================================================================
+   Research memo — editorial B&W. IBM Plex Serif display, Mono accents,
+   hair-rule dividers, generous spacing. Inspired by arXiv abstract pages
+   crossed with the typography of a print quarterly.
+   ===================================================================== */
+
+.memo {
+  background: #fafaf7;
+  color: #111;
+  padding: 0;
+  margin: 0;
+}
+
+.memo-paper {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 96px 32px 120px;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.7;
+  color: #1a1a1a;
+}
+
+.memo-paper a {
+  color: #1a1a1a;
+  border-bottom: 1px solid rgba(0,0,0,0.4);
+  text-decoration: none;
+  transition: border-bottom-color 0.15s ease;
+}
+.memo-paper a:hover { border-bottom-color: #000; }
+
+.memo-paper code {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.86em;
+  background: #efeee7;
+  padding: 1px 6px;
+  border-radius: 3px;
+  word-break: break-word;
+}
+
+/* Header --------------------------------------------------------------- */
+.memo-head {
+  text-align: left;
+  margin-bottom: 56px;
+}
+.memo-eyebrow {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #555;
+  margin: 0 0 32px;
+}
+.memo-title {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 500;
+  font-size: 54px;
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  margin: 0 0 28px;
+  color: #0a0a0a;
+}
+.memo-title em {
+  font-style: italic;
+  font-weight: 400;
+  color: #222;
+}
+.memo-byline {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #555;
+  margin: 0;
+}
+.memo-byline a { color: #555; border-bottom-color: rgba(0,0,0,0.25); }
+.memo-byline-sep { color: #999; }
+.memo-byline-date { color: #555; }
+
+/* Abstract ------------------------------------------------------------- */
+.memo-abstract {
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  padding: 28px 0 24px;
+  margin: 0 0 56px;
+}
+.memo-abstract-label {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 600;
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  margin: 0 0 12px;
+  color: #0a0a0a;
+}
+.memo-abstract > p:not(.memo-abstract-label):not(.memo-keywords) {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-size: 17px;
+  line-height: 1.65;
+  color: #1a1a1a;
+  margin: 0 0 18px;
+  text-align: justify;
+  hyphens: auto;
+}
+.memo-abstract strong { font-weight: 600; color: #0a0a0a; }
+.memo-abstract em { font-style: italic; }
+.memo-abstract code {
+  font-size: 14.5px;
+  background: transparent;
+  padding: 0;
+  border-bottom: 1px dotted rgba(0,0,0,0.3);
+  border-radius: 0;
+}
+.memo-keywords {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #555;
+  margin: 18px 0 0;
+  line-height: 1.7;
+}
+.memo-keywords span {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #0a0a0a;
+}
+
+/* Numbers strip -------------------------------------------------------- */
+.memo-numbers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  margin: 0 0 72px;
+  background: #fafaf7;
+}
+.memo-num {
+  padding: 24px 18px 22px;
+  border-right: 1px solid rgba(0,0,0,0.18);
+  text-align: left;
+}
+.memo-num:last-child { border-right: none; }
+.memo-num-v {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 500;
+  font-size: 42px;
+  line-height: 1;
+  color: #0a0a0a;
+  letter-spacing: -0.02em;
+}
+.memo-num-l {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #555;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
+/* Sections ------------------------------------------------------------- */
+.memo-section {
+  margin: 0 0 56px;
+}
+.memo-section:last-of-type { margin-bottom: 72px; }
+.memo-sec-num {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #555;
+  margin: 0 0 12px;
+}
+.memo-section h2 {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  margin: 0 0 22px;
+  color: #0a0a0a;
+}
+.memo-section h2 em { font-style: italic; font-weight: 400; }
+.memo-section p {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-size: 17px;
+  line-height: 1.68;
+  color: #222;
+  margin: 0 0 16px;
+  text-align: justify;
+  hyphens: auto;
+}
+.memo-section p strong { font-weight: 600; color: #0a0a0a; }
+.memo-section p em { font-style: italic; }
+
+.memo-list {
+  list-style: none;
+  counter-reset: memo-li;
+  padding: 0;
+  margin: 22px 0 22px;
+}
+.memo-list li {
+  counter-increment: memo-li;
+  position: relative;
+  padding: 12px 0 12px 56px;
+  border-top: 1px solid rgba(0,0,0,0.12);
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #222;
+}
+.memo-list li:last-child { border-bottom: 1px solid rgba(0,0,0,0.12); }
+.memo-list li::before {
+  content: counter(memo-li, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 14px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #555;
+}
+.memo-list li strong { font-weight: 600; color: #0a0a0a; }
+
+.memo-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.memo-links li {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: #333;
+  padding: 12px 0;
+  border-top: 1px solid rgba(0,0,0,0.1);
+}
+.memo-links li:last-child { border-bottom: 1px solid rgba(0,0,0,0.1); }
+.memo-links li a { font-weight: 500; }
+
+.memo-demo {
+  background: #0c0d0f;
+  color: #e4e2d8;
+  border-radius: 0;
+  padding: 24px 28px;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+  margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  border: 1px solid #0c0d0f;
+}
+.memo-demo code { background: transparent; color: inherit; padding: 0; font-size: inherit; border-radius: 0; }
+.memo-demo .memo-c { color: #7d7e85; font-style: italic; }
+.memo-demo .memo-p { color: #c9c7c0; user-select: none; }
+
+/* Footer --------------------------------------------------------------- */
+.memo-footer {
+  margin-top: 80px;
+  padding: 0;
+}
+.memo-foot-rule {
+  border-top: 1px solid #111;
+  margin: 0 0 18px;
+  padding: 0;
+}
+.memo-foot-line {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: #333;
+  margin: 0 0 10px;
+  line-height: 1.7;
+}
+.memo-foot-line a { color: #333; border-bottom-color: rgba(0,0,0,0.25); }
+.memo-foot-tag { font-weight: 600; color: #0a0a0a; text-transform: uppercase; letter-spacing: 0.1em; }
+.memo-foot-sep { color: #999; margin: 0 8px; }
+.memo-foot-dim { color: #777; font-size: 10.5px; }
+.memo-foot-dim a { color: #777; }
+
+/* Responsive ----------------------------------------------------------- */
+@media (max-width: 760px) {
+  .memo-paper { padding: 56px 22px 80px; }
+  .memo-title { font-size: 38px; }
+  .memo-section h2 { font-size: 24px; }
+  .memo-numbers { grid-template-columns: repeat(2, 1fr); }
+  .memo-num { border-right: none; border-bottom: 1px solid rgba(0,0,0,0.12); }
+  .memo-num:nth-child(odd) { border-right: 1px solid rgba(0,0,0,0.12); }
+  .memo-num:nth-last-child(-n+2) { border-bottom: none; }
+  .memo-num-v { font-size: 34px; }
+  .memo-section p, .memo-abstract > p:not(.memo-abstract-label):not(.memo-keywords) { font-size: 16px; text-align: left; hyphens: none; }
+}
+
+/* (legacy .research styles kept below for /benchmarks etc to remain unaffected) */
 .research {
   max-width: 920px;
   margin: 0 auto;

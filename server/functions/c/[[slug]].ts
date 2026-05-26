@@ -10,6 +10,7 @@ import {
   parseAddress,
   resolveWithKV,
   allEntriesWithKV,
+  isPrivate,
   type RegistryEntry,
 } from "../_lib/registry";
 import {
@@ -17,7 +18,9 @@ import {
   fetchInstall,
   fetchSibling,
   CapsuleFetchError,
+  CapsuleAuthError,
 } from "../_lib/github";
+import { extractToken } from "../_lib/auth";
 import { renderCapsule, renderFile, layout } from "../_lib/render";
 
 interface Env { CAPSULE_REGISTRY?: KVNamespace }
@@ -61,15 +64,16 @@ function splitBlob(slug: string): { addrSlug: string; filePath: string } | null 
 }
 
 
-export const onRequestGet: PagesFunction<Env> = async ({ params, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ params, env, request }) => {
   const slug = joinSlug(params.slug);
   if (!slug) return errorPage("Bad request", "Missing capsule address.", 400);
 
+  const token = extractToken(request);
   const blob = splitBlob(slug);
   if (blob) {
-    return await handleBlob(env, blob.addrSlug, blob.filePath);
+    return await handleBlob(env, blob.addrSlug, blob.filePath, token);
   }
-  return await handleManPage(env, slug);
+  return await handleManPage(env, slug, token);
 };
 
 
@@ -77,22 +81,50 @@ export const onRequestGet: PagesFunction<Env> = async ({ params, env }) => {
 // man-page (now with Source-files section)
 // ---------------------------------------------------------------------------
 
-async function handleManPage(env: Env, slug: string): Promise<Response> {
+async function handleManPage(env: Env, slug: string, token: string | null): Promise<Response> {
   const addr = await resolveSlug(env, slug);
   if (!addr.ok) return addr.response;
 
+  if (isPrivate(addr.entry) && !token) return privateGatePage(slug);
+
   try {
-    const { capsule } = await fetchCapsule(addr.entry);
-    const installResult = await fetchInstall(addr.entry);
+    const { capsule } = await fetchCapsule(addr.entry, token ?? undefined);
+    const installResult = await fetchInstall(addr.entry, token ?? undefined);
     const files = installResult?.install.files ?? [];
     const title = `${capsule.name} v${capsule.version}`;
     return html(layout(title, renderCapsule(addr.entry, capsule, { files })));
   } catch (err) {
+    if (err instanceof CapsuleAuthError) {
+      return privateGatePage(slug, err.message);
+    }
     if (err instanceof CapsuleFetchError) {
       return errorPage("Upstream fetch failed", err.message, 502);
     }
     throw err;
   }
+}
+
+
+function privateGatePage(slug: string, note?: string): Response {
+  const cleanSlug = slug.replace(/^\/+/, "");
+  return html(layout("Private capsule", `
+<main class="error">
+  <h1>Private capsule</h1>
+  <p>
+    <code>capsule://${escape(cleanSlug)}</code> is marked
+    <strong>private</strong>. The registry won't serve it without proof
+    you can read the underlying GitHub repo.
+  </p>
+  ${note ? `<p class="hint">${escape(note)}</p>` : ""}
+  <h2 style="margin-top:24px;font-size:14px;text-transform:uppercase;letter-spacing:0.06em;color:#666">Access from the CLI</h2>
+  <pre><code># Uses gh auth automatically — no extra setup if you have repo access.
+capsule pull capsule://${escape(cleanSlug)}
+capsule man  capsule://${escape(cleanSlug)}</code></pre>
+  <h2 style="margin-top:18px;font-size:14px;text-transform:uppercase;letter-spacing:0.06em;color:#666">Access from a browser</h2>
+  <p>Visit <a href="/auth?return=/c/${escape(cleanSlug)}">/auth</a> to paste a GitHub PAT once; it's stored as an HttpOnly cookie and reused for private reads.</p>
+  <p><a href="/">← back to public registry</a></p>
+</main>`,
+  ), 401);
 }
 
 
@@ -104,9 +136,14 @@ async function handleBlob(
   env: Env,
   addrSlug: string,
   filePath: string,
+  token: string | null,
 ): Promise<Response> {
   const addr = await resolveSlug(env, addrSlug);
   if (!addr.ok) return addr.response;
+
+  if (isPrivate(addr.entry) && !token) {
+    return privateGatePage(`${addrSlug}/blob/${filePath}`);
+  }
 
   if (!filePath || filePath.includes("..")) {
     return errorPage("Invalid file path", `Refusing to serve '${filePath}'.`, 400);
@@ -115,7 +152,7 @@ async function handleBlob(
   // Confirm the file is actually declared by the capsule's install.json.
   // (We allow capsule.yaml and install.json themselves as a convenience.)
   let allowed = filePath === "capsule.yaml" || filePath === "install.json";
-  const install = await fetchInstall(addr.entry);
+  const install = await fetchInstall(addr.entry, token ?? undefined);
   const declared = install?.install.files.map((f) => f.from) ?? [];
   if (!allowed && declared.includes(filePath)) allowed = true;
 
@@ -132,14 +169,14 @@ async function handleBlob(
     let text: string | null;
     let sourceUrl: string;
     if (filePath === "capsule.yaml") {
-      const { raw, source_url } = await fetchCapsule(addr.entry);
+      const { raw, source_url } = await fetchCapsule(addr.entry, token ?? undefined);
       text = raw;
       sourceUrl = source_url;
     } else if (filePath === "install.json" && install) {
       text = JSON.stringify(install.install, null, 2);
       sourceUrl = install.source_url;
     } else {
-      const result = await fetchSibling(addr.entry, filePath);
+      const result = await fetchSibling(addr.entry, filePath, token ?? undefined);
       if (!result) {
         return errorPage("File not found", `${filePath} returned 404 from the source repo.`, 404);
       }
@@ -149,6 +186,9 @@ async function handleBlob(
     const title = `${addr.entry.name} · ${filePath}`;
     return html(layout(title, renderFile(addr.entry, filePath, text, sourceUrl)));
   } catch (err) {
+    if (err instanceof CapsuleAuthError) {
+      return privateGatePage(`${addrSlug}/blob/${filePath}`, err.message);
+    }
     if (err instanceof CapsuleFetchError) {
       return errorPage("Upstream fetch failed", err.message, 502);
     }

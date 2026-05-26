@@ -69,16 +69,22 @@ def registry_base() -> str:
 
 
 def resolve(addr: Address) -> Resolved:
-    """Ask the registry server to translate an address into a git source."""
+    """Ask the registry server to translate an address into a git source.
+
+    Sends Authorization: Bearer if a token is available (CAPSULE_TOKEN env or
+    `gh auth token`), so private capsules resolve transparently for users who
+    have access to the underlying private repo.
+    """
     v = f"@{addr.version}" if addr.version else ""
     url = f"{registry_base()}/api/v1/resolve/{addr.owner}/{addr.name}{v}"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "capsule-cli/0.2 (+https://github.com/quake0day/capsule)",
-            "Accept": "application/json",
-        },
-    )
+    headers: dict[str, str] = {
+        "User-Agent": "capsule-cli/0.4 (+https://github.com/quake0day/capsule)",
+        "Accept": "application/json",
+    }
+    tok = _read_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             body = json.loads(resp.read().decode("utf-8"))
@@ -151,3 +157,23 @@ def _git(args: list[str], *, check_msg: str | None = None) -> None:
         raise CapsuleClientError(
             f"git failed ({what}): {exc.stderr.strip() or exc.stdout.strip()}"
         ) from exc
+
+
+def _read_token() -> str | None:
+    """Mirror of push._find_token: env first, then `gh auth token`. Returns None
+    silently if neither is available — public reads still work without a token."""
+    env = os.environ.get("CAPSULE_TOKEN")
+    if env:
+        return env.strip()
+    gh = shutil.which("gh")
+    if not gh:
+        return None
+    try:
+        out = subprocess.run(
+            [gh, "auth", "token"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError:
+        return None
+    tok = out.stdout.strip()
+    return tok or None
