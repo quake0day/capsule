@@ -340,11 +340,11 @@ def call_gemini(prompt: str, *, api_key: str, model: str) -> dict:
     body = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {
-            # Gemini 2.5 supports up to 65k output tokens; we use 32k to
-            # leave headroom for the long decomposition JSON of mid-sized
-            # repos. A truncated response (finishReason=MAX_TOKENS) is
-            # detected post-hoc.
-            "maxOutputTokens": 32000,
+            # Gemini 2.5 supports up to 65k output tokens. Use the full
+            # ceiling — for the biggest repos the decomposition JSON can
+            # itself run ~40-50k. A truncated response (finishReason=
+            # MAX_TOKENS) is detected post-hoc.
+            "maxOutputTokens": 65000,
             "temperature": 0.4,
             # Force the model to emit a JSON document instead of prose.
             # Removes the markdown-fenced-block parsing risk and most
@@ -360,7 +360,9 @@ def call_gemini(prompt: str, *, api_key: str, model: str) -> dict:
         headers={"content-type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        # 600s ceiling because 65k-token generations on big-repo
+        # decompositions can take 2-4 minutes wall-clock.
+        with urllib.request.urlopen(req, timeout=600) as resp:
             return _normalise_gemini(json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
