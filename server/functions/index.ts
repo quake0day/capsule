@@ -65,12 +65,35 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 
   return html(layout("Registry", `
 <main class="index">
-  <h1>Registry</h1>
-  <p class="lede">
-    ${entries.length} capsule${entries.length === 1 ? "" : "s"} registered.
-    Click into one to read its man page. Pull any of them with
-    <code>capsule pull capsule://&lt;owner&gt;/&lt;name&gt;</code>.
-  </p>
-  ${list}
+  <section class="quickstart">
+    <h1>Use these capsules with Claude</h1>
+    <p class="quickstart-lede">
+      Install the <code>capsule-compose</code> skill once, then describe
+      what you want to build. Claude reads this registry, picks fitting
+      capsules, asks you to confirm, and reconstructs a runnable project.
+    </p>
+    <pre class="install-cmd"><code>curl -fsSL https://capsule-registry.pages.dev/install-skill.sh | bash</code></pre>
+    <p class="quickstart-hint">
+      After installing, restart Claude Code and try a prompt like:<br>
+      <em>"find me capsules for a video chat app with auth and recording"</em><br>
+      <em>"build a chat starter from these capsules"</em>
+    </p>
+    <p class="quickstart-meta">
+      <a href="/install-skill.sh">View the install script first</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/quake0day/capsule">capsule on GitHub (Apache-2.0)</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/quake0day/capsule/blob/main/SPEC.md">capsule.yaml spec</a>
+    </p>
+  </section>
+
+  <section class="capsules">
+    <h2>Registry <span class="count">· ${entries.length} capsule${entries.length === 1 ? "" : "s"}</span></h2>
+    <p class="lede">
+      Click any capsule for its man page. Pull from the command line with
+      <code>capsule pull capsule://&lt;owner&gt;/&lt;name&gt;</code>.
+    </p>
+    ${list}
+  </section>
 </main>`));
 };

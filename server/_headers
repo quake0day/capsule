@@ -23,3 +23,10 @@
 
 /
   Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+# The install-skill.sh installer — served as text so users can `curl`-inspect
+# it before piping to bash, and so browsers display the source instead of
+# offering a download.
+/install-skill.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300, stale-while-revalidate=900
