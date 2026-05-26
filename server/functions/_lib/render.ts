@@ -22,7 +22,13 @@ const h = (s: string): string =>
   }[c] as string));
 
 /** Wrap rendered <main> content in the standard page chrome. */
-export function layout(title: string, main: string, opts: { canonical?: string } = {}): string {
+export function layout(
+  title: string,
+  main: string,
+  opts: { canonical?: string; ogTitle?: string; ogDescription?: string } = {},
+): string {
+  const ogT = opts.ogTitle ?? `${title} — capsule`;
+  const ogD = opts.ogDescription ?? "An AI-native Unix-like composition layer for software engineering.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -30,11 +36,22 @@ export function layout(title: string, main: string, opts: { canonical?: string }
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${h(title)} — capsule</title>
 <link rel="stylesheet" href="/assets/style.css">
+<link rel="icon" type="image/png" href="/assets/logo.png">
+<link rel="apple-touch-icon" href="/assets/logo.png">
+<meta property="og:title" content="${h(ogT)}">
+<meta property="og:description" content="${h(ogD)}">
+<meta property="og:image" content="/assets/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="/assets/og.png">
 ${opts.canonical ? `<link rel="canonical" href="${h(opts.canonical)}">` : ""}
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">capsule</a>
+  <a class="brand" href="/">
+    <img class="brand-mark" src="/assets/logo.png" alt="" width="28" height="28">
+    <span class="brand-name">capsule</span>
+  </a>
   <span class="tagline">AI-native Unix-like composition layer</span>
 </header>
 ${main}

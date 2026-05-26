@@ -46,7 +46,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   return html(layout("Research project", render(
     capsuleCount, ownerCount, decomposedRepos,
     runs.length, distinctModels, distinctRepos, multiRuns,
-  )));
+  ), {
+    ogTitle: "Capsule — a composable subsystem layer for AI software engineering",
+    ogDescription: `${capsuleCount} live capsules across ${decomposedRepos} decomposed OSS repos, benchmarked across ${distinctModels} LLMs.`,
+  }));
 };
 
 
@@ -72,12 +75,20 @@ function render(
 <main class="research">
 
   <section class="r-hero">
+    <img class="r-logo" src="/assets/logo.png" alt="" width="96" height="96">
     <p class="r-eyebrow">Capsule · research project · 2026</p>
     <h1>The composable subsystem layer<br>for AI software engineering</h1>
     <p class="r-tagline">
       Unix piped <em>text</em> between programs.<br>
       Capsule pipes <em>engineering context</em> between AI agents.
     </p>
+    <div class="r-hero-cta">
+      <a class="btn btn-primary" href="https://github.com/quake0day/capsule">View on GitHub</a>
+      <a class="btn btn-ghost" href="/benchmarks">See the benchmarks &rarr;</a>
+    </div>
+    <figure class="r-hero-figure">
+      <img src="/assets/hero.png" alt="A glowing mint-green capsule surrounded by a quiet constellation of dots and lines">
+    </figure>
   </section>
 
   <section class="r-stats">
