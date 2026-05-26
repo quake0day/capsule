@@ -79,13 +79,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       <em>"build a chat starter from these capsules"</em>
     </p>
     <p class="quickstart-meta">
-      <a href="/install-skill.sh">View the install script first</a>
+      <a href="/research">Research project</a>
       <span class="sep">·</span>
       <a href="/benchmarks">LLM benchmarks</a>
       <span class="sep">·</span>
-      <a href="https://github.com/quake0day/capsule">capsule on GitHub (Apache-2.0)</a>
+      <a href="/install-skill.sh">View install script</a>
       <span class="sep">·</span>
-      <a href="https://github.com/quake0day/capsule/blob/main/SPEC.md">capsule.yaml spec</a>
+      <a href="https://github.com/quake0day/capsule">GitHub (Apache-2.0)</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/quake0day/capsule/blob/main/SPEC.md">spec</a>
     </p>
   </section>
 
