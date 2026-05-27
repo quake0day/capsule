@@ -27,6 +27,7 @@ import {
   parseAddress,
   resolveWithKV,
   uniqueLatestWithKV,
+  isPrivate,
   type RegistryEntry,
 } from "./_lib/registry";
 import {
@@ -35,9 +36,24 @@ import {
   fetchSibling,
   rawUrl,
   CapsuleFetchError,
+  CapsuleAuthError,
 } from "./_lib/github";
+import { extractToken, verifyGithubToken } from "./_lib/auth";
 
 interface Env { CAPSULE_REGISTRY?: KVNamespace }
+
+/** Caller's authenticated identity, if any. Resolved once per request. */
+interface AuthCtx {
+  token: string | null;
+  login: string | null;
+}
+
+async function resolveAuth(request: Request): Promise<AuthCtx> {
+  const token = extractToken(request);
+  if (!token) return { token: null, login: null };
+  const login = await verifyGithubToken(token);
+  return { token, login };
+}
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "capsule-registry";
@@ -89,8 +105,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return rpcError(body?.id ?? null, -32600, "Invalid Request");
   }
 
+  const auth = await resolveAuth(request);
+
   try {
-    return await dispatch(body, env.CAPSULE_REGISTRY);
+    return await dispatch(body, env.CAPSULE_REGISTRY, auth);
   } catch (err) {
     return rpcError(body.id, -32603, `Internal error: ${(err as Error).message}`);
   }
@@ -113,6 +131,7 @@ export const onRequestGet: PagesFunction<Env> = async () =>
 async function dispatch(
   req: JsonRpcRequest,
   kv: KVNamespace | undefined,
+  auth: AuthCtx,
 ): Promise<Response> {
   switch (req.method) {
     case "initialize":
@@ -134,13 +153,13 @@ async function dispatch(
       return rpcResult(req.id, { tools: TOOL_DESCRIPTORS });
 
     case "tools/call":
-      return await callTool(req, kv);
+      return await callTool(req, kv, auth);
 
     case "resources/list":
-      return rpcResult(req.id, { resources: await listResources(kv) });
+      return rpcResult(req.id, { resources: await listResources(kv, auth) });
 
     case "resources/read":
-      return await readResource(req, kv);
+      return await readResource(req, kv, auth);
 
     case "ping":
       return rpcResult(req.id, {});
@@ -192,7 +211,16 @@ const TOOL_DESCRIPTORS = [
 ];
 
 
-async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined): Promise<Response> {
+function gateEntry(entry: RegistryEntry, auth: AuthCtx): string | null {
+  if (!isPrivate(entry)) return null;
+  if (!auth.token) return `private capsule (${entry.owner}/${entry.name}): send Authorization: Bearer <github-token> to MCP`;
+  if (!auth.login || auth.login.toLowerCase() !== entry.owner.toLowerCase()) {
+    return `private capsule (${entry.owner}/${entry.name}): your token belongs to a different user`;
+  }
+  return null;
+}
+
+async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined, auth: AuthCtx): Promise<Response> {
   const params = (req.params || {}) as { name?: string; arguments?: Record<string, unknown> };
   const name = params.name;
   const args = params.arguments || {};
@@ -203,6 +231,8 @@ async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined): Promi
     if (!parsed) return toolError(req.id, `invalid address: ${addr}`);
     const entry = await resolveWithKV(parsed, kv);
     if (!entry) return toolError(req.id, `no capsule in registry for ${addr}`);
+    const denied = gateEntry(entry, auth);
+    if (denied) return toolError(req.id, denied);
     return toolResult(req.id, JSON.stringify(
       {
         owner: entry.owner,
@@ -211,7 +241,8 @@ async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined): Promi
         git_url: entry.git_url,
         ref: entry.ref,
         path: entry.path,
-        raw_url: rawUrl(entry),
+        raw_url: isPrivate(entry) ? null : rawUrl(entry),
+        visibility: entry.visibility ?? "public",
       },
       null,
       2,
@@ -224,22 +255,30 @@ async function callTool(req: JsonRpcRequest, kv: KVNamespace | undefined): Promi
     if (!parsed) return toolError(req.id, `invalid address: ${addr}`);
     const entry = await resolveWithKV(parsed, kv);
     if (!entry) return toolError(req.id, `no capsule in registry for ${addr}`);
+    const denied = gateEntry(entry, auth);
+    if (denied) return toolError(req.id, denied);
     try {
-      const { capsule, source_url } = await fetchCapsule(entry);
+      const { capsule, source_url } = await fetchCapsule(entry, auth.token ?? undefined);
       return toolResult(req.id, JSON.stringify({ source_url, capsule }, null, 2));
     } catch (err) {
+      if (err instanceof CapsuleAuthError) return toolError(req.id, err.message);
       const msg = err instanceof CapsuleFetchError ? err.message : String(err);
       return toolError(req.id, `fetch failed: ${msg}`);
     }
   }
 
   if (name === "capsule_list") {
-    const entries = await uniqueLatestWithKV(kv);
-    const items = entries.map((e) => ({
+    // Include private when authed, scoped to caller's owner.
+    const entries = await uniqueLatestWithKV(kv, { includePrivate: !!auth.login });
+    const visible = auth.login
+      ? entries.filter((e) => e.visibility !== "private" || e.owner.toLowerCase() === auth.login!.toLowerCase())
+      : entries.filter((e) => e.visibility !== "private");
+    const items = visible.map((e) => ({
       address: `capsule://${e.owner}/${e.name}@${e.version}`,
       owner: e.owner,
       name: e.name,
       version: e.version,
+      visibility: e.visibility ?? "public",
     }));
     return toolResult(req.id, JSON.stringify(items, null, 2));
   }
@@ -280,8 +319,11 @@ function splitFileUri(uri: string): { addrSlug: string; filePath: string } | nul
 }
 
 
-async function listResources(kv: KVNamespace | undefined) {
-  const entries = await uniqueLatestWithKV(kv);
+async function listResources(kv: KVNamespace | undefined, auth: AuthCtx) {
+  const all = await uniqueLatestWithKV(kv, { includePrivate: !!auth.login });
+  const entries = auth.login
+    ? all.filter((e) => e.visibility !== "private" || e.owner.toLowerCase() === auth.login!.toLowerCase())
+    : all.filter((e) => e.visibility !== "private");
   const out: Array<{ uri: string; name: string; description: string; mimeType: string }> = [];
 
   // Each capsule contributes one "manifest" resource plus one resource per
@@ -291,14 +333,14 @@ async function listResources(kv: KVNamespace | undefined) {
     const baseAddr = `capsule://${e.owner}/${e.name}@${e.version}`;
     out.push({
       uri: baseAddr,
-      name: `${e.owner}/${e.name}@${e.version} · manifest`,
+      name: `${e.owner}/${e.name}@${e.version} · manifest${isPrivate(e) ? " · private" : ""}`,
       description: `Top-level capsule.yaml for ${e.owner}/${e.name} at version ${e.version}.`,
       mimeType: "application/yaml",
     });
 
     let install;
     try {
-      install = await fetchInstall(e);
+      install = await fetchInstall(e, auth.token ?? undefined);
     } catch {
       install = null;
     }
@@ -337,14 +379,14 @@ function guessMime(path: string): string {
 }
 
 
-async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): Promise<Response> {
+async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined, auth: AuthCtx): Promise<Response> {
   const params = (req.params || {}) as { uri?: string };
   const uri = String(params.uri || "");
 
   // File URI?
   const fileUri = splitFileUri(uri);
   if (fileUri) {
-    return await readFileResource(req, kv, fileUri.addrSlug, fileUri.filePath);
+    return await readFileResource(req, kv, fileUri.addrSlug, fileUri.filePath, auth);
   }
 
   // Otherwise plain capsule manifest URI.
@@ -356,8 +398,10 @@ async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): P
   if (!entry) {
     return rpcError(req.id, -32602, `unknown resource: ${uri}`);
   }
+  const denied = gateEntry(entry, auth);
+  if (denied) return rpcError(req.id, -32001, denied);
   try {
-    const { raw } = await fetchCapsule(entry);
+    const { raw } = await fetchCapsule(entry, auth.token ?? undefined);
     return rpcResult(req.id, {
       contents: [{
         uri: `capsule://${entry.owner}/${entry.name}@${entry.version}`,
@@ -366,6 +410,7 @@ async function readResource(req: JsonRpcRequest, kv: KVNamespace | undefined): P
       }],
     });
   } catch (err) {
+    if (err instanceof CapsuleAuthError) return rpcError(req.id, -32001, err.message);
     return rpcError(req.id, -32603, `resource fetch failed: ${(err as Error).message}`);
   }
 }
@@ -376,6 +421,7 @@ async function readFileResource(
   kv: KVNamespace | undefined,
   addrSlug: string,
   filePath: string,
+  auth: AuthCtx,
 ): Promise<Response> {
   const addr = parseAddress(addrSlug);
   if (!addr) return rpcError(req.id, -32602, `invalid file URI: ${addrSlug}/files/${filePath}`);
@@ -383,24 +429,26 @@ async function readFileResource(
 
   const entry = await resolveWithKV(addr, kv);
   if (!entry) return rpcError(req.id, -32602, `unknown capsule: ${addrSlug}`);
+  const denied = gateEntry(entry, auth);
+  if (denied) return rpcError(req.id, -32001, denied);
 
   // Allow capsule.yaml + install.json + any file declared by install.json.
   try {
     let text: string;
     let mime: string;
     if (filePath === "capsule.yaml") {
-      text = (await fetchCapsule(entry)).raw;
+      text = (await fetchCapsule(entry, auth.token ?? undefined)).raw;
       mime = "application/yaml";
     } else if (filePath === "install.json") {
-      const install = await fetchInstall(entry);
+      const install = await fetchInstall(entry, auth.token ?? undefined);
       if (!install) return rpcError(req.id, -32602, `no install.json for ${addrSlug}`);
       text = JSON.stringify(install.install, null, 2);
       mime = "application/json";
     } else {
-      const install = await fetchInstall(entry);
+      const install = await fetchInstall(entry, auth.token ?? undefined);
       const declared = install?.install.files.some((f) => f.from === filePath) ?? false;
       if (!declared) return rpcError(req.id, -32602, `${filePath} not declared in install.json`);
-      const result = await fetchSibling(entry, filePath);
+      const result = await fetchSibling(entry, filePath, auth.token ?? undefined);
       if (!result) return rpcError(req.id, -32602, `${filePath}: 404 upstream`);
       text = result.text;
       mime = guessMime(filePath);
@@ -413,6 +461,7 @@ async function readFileResource(
       }],
     });
   } catch (err) {
+    if (err instanceof CapsuleAuthError) return rpcError(req.id, -32001, err.message);
     return rpcError(req.id, -32603, `file fetch failed: ${(err as Error).message}`);
   }
 }

@@ -79,6 +79,41 @@ a:hover { border-bottom-color: var(--accent); }
 .brand-name { letter-spacing: -0.005em; }
 .tagline { color: var(--ink-3); font-size: 13px; }
 
+/* Topbar nav — Registry · Research · Benchmarks · Sign in.
+   Lives to the right of the brand on wide screens; wraps under it on mobile. */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+}
+.topnav a {
+  color: var(--ink-2);
+  border-bottom: 1px solid transparent;
+  padding-bottom: 1px;
+  transition: color 0.12s ease, border-bottom-color 0.12s ease;
+}
+.topnav a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+.topnav a.topnav-auth {
+  color: var(--accent);
+  border: 1px solid rgba(90, 58, 30, 0.25);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-weight: 500;
+}
+.topnav a.topnav-auth:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  .topnav { gap: 14px; margin-left: 0; width: 100%; padding-top: 4px; border-top: 1px dashed var(--line); padding-top: 8px; font-size: 12px; }
+  .topnav a.topnav-auth { padding: 3px 10px; }
+}
+
 .manpage, .index, .error {
   max-width: 880px;
   margin: 0 auto;

@@ -23,6 +23,22 @@ if [[ -z "$PY" ]]; then
   exit 2
 fi
 
+# Auth discovery — same precedence as the Python CLI's _read_token():
+#   1. $CAPSULE_TOKEN (explicit override)
+#   2. `gh auth token` (existing gh CLI session)
+# When set, every registry call carries Authorization: Bearer, which is
+# how private capsules become visible to this script. Public-only mode
+# still works (the server treats anonymous requests as before).
+AUTH_HEADER=()
+if [[ -n "${CAPSULE_TOKEN:-}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${CAPSULE_TOKEN}")
+elif command -v gh >/dev/null 2>&1; then
+  _tok="$(gh auth token 2>/dev/null || true)"
+  if [[ -n "$_tok" ]]; then
+    AUTH_HEADER=(-H "Authorization: Bearer ${_tok}")
+  fi
+fi
+
 owner_filter=""
 search_term=""
 
@@ -42,7 +58,7 @@ done
 #    cross-version). Falls back to scraping the HTML index if MCP is
 #    unreachable.
 list_via_mcp() {
-  curl -fsS -X POST "$REGISTRY/mcp" \
+  curl -fsS -X POST "$REGISTRY/mcp" "${AUTH_HEADER[@]}" \
     -H "content-type: application/json" \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"capsule_list"}}' \
     | "$PY" -c "
@@ -55,9 +71,22 @@ for it in items:
 }
 
 list_via_html() {
-  curl -fsS "$REGISTRY/" \
-    | grep -oE 'href=\"/c/[^\"@]+\"' \
-    | sed -E 's#href=\"/c/##;s#\"$##'
+  # Sending the cookie path is the only way the homepage will include the
+  # caller's own private capsules. AUTH_HEADER alone (header form) is also
+  # accepted server-side; we send both forms for symmetry.
+  local _tok=""
+  if [[ ${#AUTH_HEADER[@]} -gt 0 ]]; then
+    _tok="${AUTH_HEADER[1]#Authorization: Bearer }"
+  fi
+  if [[ -n "$_tok" ]]; then
+    curl -fsS "$REGISTRY/" "${AUTH_HEADER[@]}" --cookie "capsule_token=${_tok}" \
+      | grep -oE 'href=\"/c/[^\"@]+\"' \
+      | sed -E 's#href=\"/c/##;s#\"$##'
+  else
+    curl -fsS "$REGISTRY/" \
+      | grep -oE 'href=\"/c/[^\"@]+\"' \
+      | sed -E 's#href=\"/c/##;s#\"$##'
+  fi
 }
 
 addresses="$(list_via_mcp 2>/dev/null || list_via_html)"
@@ -78,7 +107,8 @@ echo "$addresses" | while IFS= read -r addr; do
 
   # `</dev/null` is critical: without it curl inherits the outer
   # `while read` pipe and silently consumes the rest of the address list.
-  resp="$(curl -fsS "$REGISTRY/api/v1/capsule/$addr" </dev/null 2>/dev/null || true)"
+  # AUTH_HEADER is passed through so private capsules are fetchable.
+  resp="$(curl -fsS "${AUTH_HEADER[@]}" "$REGISTRY/api/v1/capsule/$addr" </dev/null 2>/dev/null || true)"
   if [[ -z "$resp" ]]; then
     printf "%-60s  [?]  (fetch failed)\n" "$addr"
     continue

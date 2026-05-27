@@ -55,7 +55,12 @@ ${opts.canonical ? `<link rel="canonical" href="${h(opts.canonical)}">` : ""}
     <img class="brand-mark" src="/assets/logo.png" alt="" width="28" height="28">
     <span class="brand-name">capsule</span>
   </a>
-  <span class="tagline">AI-native Unix-like composition layer</span>
+  <nav class="topnav">
+    <a href="/">Registry</a>
+    <a href="/research">Research</a>
+    <a href="/benchmarks">Benchmarks</a>
+    <a href="/auth" class="topnav-auth">Sign in</a>
+  </nav>
 </header>
 ${main}
 <footer class="footer">
