@@ -8,6 +8,7 @@ import type { PagesFunction, KVNamespace } from "@cloudflare/workers-types";
 
 import { uniqueLatestWithKV } from "./_lib/registry";
 import { fetchCapsule } from "./_lib/github";
+import { extractToken, verifyGithubToken } from "./_lib/auth";
 import { layout } from "./_lib/render";
 
 interface Env { CAPSULE_REGISTRY?: KVNamespace }
@@ -29,11 +30,16 @@ interface IndexCard {
   version: string;
   summary: string;
   type: string;
+  visibility: "public" | "private";
 }
 
-async function buildCard(entry: Awaited<ReturnType<typeof uniqueLatestWithKV>>[number]): Promise<IndexCard> {
+async function buildCard(
+  entry: Awaited<ReturnType<typeof uniqueLatestWithKV>>[number],
+  token: string | null,
+): Promise<IndexCard> {
+  const visibility: "public" | "private" = entry.visibility === "private" ? "private" : "public";
   try {
-    const { capsule } = await fetchCapsule(entry);
+    const { capsule } = await fetchCapsule(entry, token ?? undefined);
     const firstLine = (capsule.purpose?.summary ?? "").trim().split(/\r?\n/)[0] ?? "";
     return {
       owner: entry.owner,
@@ -41,6 +47,7 @@ async function buildCard(entry: Awaited<ReturnType<typeof uniqueLatestWithKV>>[n
       version: entry.version,
       summary: firstLine,
       type: capsule.type,
+      visibility,
     };
   } catch {
     return {
@@ -49,19 +56,42 @@ async function buildCard(entry: Awaited<ReturnType<typeof uniqueLatestWithKV>>[n
       version: entry.version,
       summary: "(failed to fetch capsule.yaml)",
       type: "?",
+      visibility,
     };
   }
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
-  const entries = await uniqueLatestWithKV(env.CAPSULE_REGISTRY);
-  const cards = await Promise.all(entries.map(buildCard));
+export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
+  // Anonymous view: public capsules only.
+  // Signed-in view (cookie / Authorization): public + caller's own private.
+  const token = extractToken(request);
+  const login = token ? await verifyGithubToken(token) : null;
+  const showPrivate = !!login;
+
+  const allEntries = await uniqueLatestWithKV(env.CAPSULE_REGISTRY, { includePrivate: showPrivate });
+  const entries = showPrivate
+    ? allEntries.filter((e) => e.visibility !== "private" || e.owner.toLowerCase() === login!.toLowerCase())
+    : allEntries;
+
+  const cards = await Promise.all(entries.map((e) => buildCard(e, token)));
+  cards.sort((a, b) => {
+    // private (yours) first, then alphabetical
+    if (a.visibility !== b.visibility) return a.visibility === "private" ? -1 : 1;
+    return `${a.owner}/${a.name}`.localeCompare(`${b.owner}/${b.name}`);
+  });
+
+  const myPrivateCount = cards.filter((c) => c.visibility === "private").length;
+  const publicCount = cards.length - myPrivateCount;
 
   const list = cards.map((c) => `
-  <a class="capsule-card" href="/c/${escape(c.owner)}/${escape(c.name)}">
-    <div class="name">${escape(c.owner)}/${escape(c.name)} <span class="version">v${escape(c.version)}</span> <span class="badge">${escape(c.type)}</span></div>
+  <a class="capsule-card${c.visibility === "private" ? " card-private" : ""}" href="/c/${escape(c.owner)}/${escape(c.name)}">
+    <div class="name">${escape(c.owner)}/${escape(c.name)} <span class="version">v${escape(c.version)}</span> <span class="badge">${escape(c.type)}</span>${c.visibility === "private" ? ` <span class="badge badge-private">private</span>` : ""}</div>
     <div class="summary">${escape(c.summary)}</div>
   </a>`).join("\n");
+
+  const authBar = login
+    ? `<p class="auth-bar">Signed in as <strong>@${escape(login)}</strong> · seeing ${myPrivateCount} of your private capsule${myPrivateCount === 1 ? "" : "s"} alongside ${publicCount} public · <a href="/auth/logout">sign out</a></p>`
+    : `<p class="auth-bar"><a href="/auth?return=/">Sign in</a> with a GitHub token to also list your private capsules here.</p>`;
 
   return html(layout("Registry", `
 <main class="index">
@@ -92,7 +122,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   </section>
 
   <section class="capsules">
-    <h2>Registry <span class="count">· ${entries.length} capsule${entries.length === 1 ? "" : "s"}</span></h2>
+    <h2>Registry <span class="count">· ${cards.length} capsule${cards.length === 1 ? "" : "s"}${myPrivateCount > 0 ? ` (${myPrivateCount} private)` : ""}</span></h2>
+    ${authBar}
     <p class="lede">
       Click any capsule for its man page. Pull from the command line with
       <code>capsule pull capsule://&lt;owner&gt;/&lt;name&gt;</code>.
