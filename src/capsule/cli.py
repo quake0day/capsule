@@ -468,6 +468,15 @@ def push(
     token: Optional[str] = typer.Option(
         None, "--token", help="Override CAPSULE_TOKEN / `gh auth token`."
     ),
+    private: bool = typer.Option(
+        False,
+        "--private",
+        help=(
+            "Register the entry with visibility=private. Subsequent reads will "
+            "require an Authorization token that can read the source repo; "
+            "GitHub itself acts as the access oracle."
+        ),
+    ),
 ) -> None:
     """Publish a capsule to the registry.
 
@@ -482,7 +491,7 @@ def push(
         raise typer.Exit(code=1) from exc
 
     try:
-        result = push_capsule(lc, git_url=git_url, ref=ref, token=token)
+        result = push_capsule(lc, git_url=git_url, ref=ref, token=token, private=private)
     except PushError as exc:
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
